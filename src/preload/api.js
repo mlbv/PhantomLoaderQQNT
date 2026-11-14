@@ -1,26 +1,31 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 const { ipcRenderer, contextBridge } = require("electron");
 
-const sendSync = (method, args) => ipcRenderer.sendSync("LiteLoader.LiteLoader.LiteLoader", method, args);
-const exposeInMainWorld = (key, value) => contextBridge.executeInMainWorld({
-    func: key => key in globalThis,
-    args: [key]
-}) || contextBridge.exposeInMainWorld(key, value);
-
-module.exports.LiteLoader = {
-    ...sendSync([], []),
-    api: {
-        config: {
-            get: async (...args) => sendSync(["api", "config", "get"], args),
-            set: async (...args) => sendSync(["api", "config", "set"], args)
-        },
-        plugin: {
-            install: async (...args) => sendSync(["api", "plugin", "install"], args),
-            delete: async (...args) => sendSync(["api", "plugin", "delete"], args),
-            disable: async (...args) => sendSync(["api", "plugin", "disable"], args)
-        },
-        openExternal: async (...args) => sendSync(["api", "openExternal"], args),
-        openPath: async (...args) => sendSync(["api", "openPath"], args)
-    }
+function createApi(name) {
+    const sendSync = (method, args) => ipcRenderer.sendSync([name, name, name].join("."), method, args);
+    return {
+        ...sendSync([], []),
+        api: {
+            config: {
+                get: async (...args) => sendSync(["api", "config", "get"], args),
+                set: async (...args) => sendSync(["api", "config", "set"], args)
+            },
+            plugin: {
+                install: async (...args) => sendSync(["api", "plugin", "install"], args),
+                delete: async (...args) => sendSync(["api", "plugin", "delete"], args),
+                disable: async (...args) => sendSync(["api", "plugin", "disable"], args)
+            },
+            openExternal: async (...args) => sendSync(["api", "openExternal"], args),
+            openPath: async (...args) => sendSync(["api", "openPath"], args)
+        }
+    };
 }
 
-exposeInMainWorld("LiteLoader", module.exports.LiteLoader);
+module.exports.PhantomLoader = createApi("PhantomLoader");
+module.exports.LiteLoader = createApi("LiteLoader");
+if (!contextBridge.executeInMainWorld({ func: () => "LiteLoader" in globalThis })) {
+    contextBridge.exposeInMainWorld("LiteLoader", module.exports.LiteLoader);
+}

@@ -1,0 +1,2 @@
+native/patches/*.patch text eol=lf
+distribution/profile.json text eol=lf

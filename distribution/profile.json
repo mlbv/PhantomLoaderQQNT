@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "platformVersion": "1.0.0",
+  "qqVersion": "9.9.37-54395",
+  "buildVersion": "54395",
+  "selectorBases": [
+    { "baseVersion": "9.9.37-54395", "buildId": "54395" },
+    { "baseVersion": "9.9.33-52230", "buildId": "52230" }
+  ],
+  "platform": "win32",
+  "architecture": "x64",
+  "loaderVersion": "1.0.0",
+  "liteloaderCompatibilityVersion": "5.2.1",
+  "nativeApiVersion": 1,
+  "native": {
+    "verifier": {
+      "rva": "0x005116f0",
+      "prologue": "56 57 53 48 83 ec 20 48 89 ce 48 8b 11 4c 8b 41 08 49 29 d0 48 8b 49 18 e8",
+      "returnValue": 1
+    },
+    "wrapper": {
+      "timeDateStamp": "0x6ad9f1da",
+      "imageSize": "0x07726000",
+      "hooks": {
+        "appendTask": {
+          "rva": "0x01d39940",
+          "prologue": "55 56 48 83 ec 48 48 8d 6c 24 40 48 c7 45 00 fe ff ff ff 48 89 d6 48 89"
+        },
+        "growTasks": {
+          "rva": "0x01d39a10",
+          "prologue": "55 41 57 41 56 41 54 56 57 53 48 83 ec 40 48 8d 6c 24 40 48 c7 45 f8 fe"
+        },
+        "executeProgram": {
+          "rva": "0x01cf35c0",
+          "prologue": "56 57 48 83 ec 28 48 89 d6 48 89 cf e8 af ed ff ff 48 89 f9 48 89 f2 48"
+        }
+      },
+      "inspectionPatches": [
+        {
+          "name": "signingStackInspection",
+          "rva": "0x00c095d9",
+          "expected": "8b 05 11 b8 e0 05",
+          "replacement": "e9 bd 38 00 00 90"
+        },
+        {
+          "name": "codeIntegrityCollection",
+          "rva": "0x02f662f9",
+          "expected": "0f 85 b3 09 00 00",
+          "replacement": "90 e9 b3 09 00 00"
+        },
+        {
+          "name": "handleInspection",
+          "rva": "0x03755630",
+          "expected": "48 8d 0d 51 a8 3a 01 ff 15 2b 54 3b 01",
+          "replacement": "66 41 c7 06 00 00 e9 8f 0a 00 00 90 90"
+        }
+      ],
+      "taskLayout": {
+        "kindOffset": 8,
+        "programOffset": 40,
+        "programTypes": [15, 16],
+        "string": {
+          "bytes": 24,
+          "longFlagMask": 1,
+          "longLengthOffset": 8,
+          "longDataOffset": 16,
+          "shortDataOffset": 1,
+          "shortLengthShift": 1
+        }
+      }
+    },
+    "capture": {
+      "maxDirectoryCodeUnits": 160,
+      "exitCodes": {
+        "captured": 3511681025,
+        "dumpFailed": 3511681026,
+        "armFailed": 78
+      },
+      "states": {
+        "uninitialized": 0,
+        "waitingForWrapper": 1,
+        "armed": 2,
+        "failed": 3
+      }
+    }
+  },
+  "originalPackage": {
+    "path": "versions/9.9.37-54395/resources/app/package.json",
+    "bytes": 486,
+    "sha256": "ac12d1b1d8e1582e1908d775eec7b62ff79a042ee92ec719f1f43ea4bb423b6d",
+    "main": "./application.asar/app_launcher/index.js"
+  },
+  "files": [
+    {
+      "path": "QQ.exe",
+      "bytes": 1717800,
+      "sha256": "abbed71fc3dfe84fa712a2243041029c4a2e60b25595528522cb92c5758d388a"
+    },
+    {
+      "path": "versions/9.9.37-54395/QQNT.dll",
+      "bytes": 214606888,
+      "sha256": "cead5c2d4e1e1ffc953abd85dd8bd875087bf6b9c9c09f22909dbde376c467d7"
+    },
+    {
+      "path": "versions/9.9.37-54395/resources/app/wrapper.node",
+      "bytes": 118186536,
+      "sha256": "fed532ad58d2404dcedf2858554e8fa52a5f4e65b271c008d2faca4011d7d4a2"
+    },
+    {
+      "path": "versions/9.9.37-54395/resources/app/application.asar",
+      "bytes": 31717452,
+      "sha256": "97c8fc9ff0c8e95c32d66e4e6e751c539fa781ec6225327ed7d5f328f345a4fb"
+    },
+    {
+      "path": "versions/9.9.37-54395/resources/app/major.node",
+      "bytes": 112285744,
+      "sha256": "5ad0dacada2291176481c0836e9003bb41ce77ffe0cece9a9d758f67d2b53a59"
+    }
+  ]
+}

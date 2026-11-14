@@ -1,4 +1,7 @@
-const message = "你咋这么急着更新？\n你就不能再等等？\n或者来催一下沫烬染（";
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
+const message = "更新进度与问题反馈请查看 PhantomLoaderQQNT 项目仓库。";
 
 export default {
     hash: "#/setting",
@@ -9,7 +12,7 @@ export default {
             counting++;
             if (counting == 20) {
                 counting = 0;
-                new Notification("LiteLoaderQQNT", { body: message });
+                new Notification("PhantomLoaderQQNT", { body: message });
             }
         });
     }

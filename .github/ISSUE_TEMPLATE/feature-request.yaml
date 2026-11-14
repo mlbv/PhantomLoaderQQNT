@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+# SPDX-License-Identifier: MIT
+
 name: 新功能请求
 description: 针对于框架提出新功能请求
 title: "[Feat]: "
@@ -7,7 +10,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        ## 感谢您愿意向 LiteLoaderQQNT 框架请求新功能
+        ## 感谢您愿意向 PhantomLoaderQQNT 框架请求新功能
         ## 以下是一些注意事项，请务必阅读让我们能够更容易处理
 
         ### ❗ | 确定没有类似/一致的 Feature 已在当前 Commit/PR 中被提出或实现。
@@ -23,11 +26,11 @@ body:
           required: true
         - label: 我确定这是一个从未被提出和实现过的功能 (请阅读以下两则)。
           required: true
-        - label: 我已在 [Issue Tracker](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/issues) 中找过我要请求的功能，没有找到类似 Issue。
+        - label: 我已在 [Issue Tracker](https://github.com/mlbv/PhantomLoaderQQNT/issues) 中找过我要请求的功能，没有找到类似 Issue。
           required: true
-        - label: 我已在 [Pull Request](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/pulls) 中找过我要请求的功能，没有找到类似 Pull Request。
+        - label: 我已在 [Pull Request](https://github.com/mlbv/PhantomLoaderQQNT/pulls) 中找过我要请求的功能，没有找到类似 Pull Request。
           required: true
-        - label: 我已知晓并同意，此模板仅用于向 LiteLoaderQQNT 框架请求新功能，否则我的 Issue 可能会被无条件关闭/锁定。
+        - label: 我已知晓并同意，此模板仅用于向 PhantomLoaderQQNT 框架请求新功能，否则我的 Issue 可能会被无条件关闭/锁定。
           required: true
 
 

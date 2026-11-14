@@ -1,28 +1,24 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 const path = require("path");
-const { protocolRegister } = require("./api.js");
+const { PhantomLoader, protocolRegister } = require("./api.js");
 const { Runtime } = require("./runtime.js");
+const { interception } = require("./interception.js");
+const { installTransport } = require("./transport.js");
 
-
-function proxySend(func) {
-    return new Proxy(func, {
-        apply(target, thisArg, [channel, ...args]) {
-            if (channel.includes("RM_IPCFROM_")) {
-                if (args?.[1]?.cmdName == "nodeIKernelSessionListener/onSessionInitComplete") {
-                    Runtime.triggerHooks("onLogin", [args[1].payload.uid]);
-                }
-            }
-            return Reflect.apply(target, thisArg, [channel, ...args]);
-        }
-    });
-}
+const hookKey = Symbol.for("LiteLoader.main.hook");
+const preloadContents = new WeakSet();
+const preloadSessions = new WeakSet();
 
 
 function proxyPreload(func) {
     if (func?.name == "_getPreloadPaths") return new Proxy(func, {
         apply(target, thisArg, argArray) {
             return [
-                path.join(LiteLoader.path.root, "./src/preload/api.js"),
-                path.join(LiteLoader.path.root, "./src/preload/module.js"),
+                path.join(PhantomLoader.path.root, "./src/preload/api.js"),
+                path.join(PhantomLoader.path.root, "./src/preload/module.js"),
                 ...Reflect.apply(target, thisArg, argArray)
             ];
         }
@@ -30,8 +26,8 @@ function proxyPreload(func) {
     if (func?.name == "getPreloadScripts") return new Proxy(func, {
         apply(target, thisArg, argArray) {
             return [
-                { filePath: path.join(LiteLoader.path.root, "./src/preload/api.js"), type: "frame" },
-                { filePath: path.join(LiteLoader.path.root, "./src/preload/module.js"), type: "frame" },
+                { filePath: path.join(PhantomLoader.path.root, "./src/preload/api.js"), type: "frame" },
+                { filePath: path.join(PhantomLoader.path.root, "./src/preload/module.js"), type: "frame" },
                 ...Reflect.apply(target, thisArg, argArray)
             ];
         }
@@ -39,15 +35,21 @@ function proxyPreload(func) {
 }
 
 
-function proxyWindow(func) {
+function proxyWindow(func, transport) {
     return new Proxy(func, {
         construct(target, argArray, newTarget) {
             Runtime.triggerHooks("onBrowserWindowCreating", [target, argArray, newTarget]);
             const window = Reflect.construct(target, argArray, newTarget);
             protocolRegister(window.webContents.session.protocol);
-            window.webContents.send = proxySend(window.webContents.send);
-            window.webContents._getPreloadPaths = proxyPreload(window.webContents._getPreloadPaths);
-            window.webContents.session.getPreloadScripts = proxyPreload(window.webContents.session.getPreloadScripts);
+            transport.attach(window.webContents, window);
+            if (!preloadContents.has(window.webContents)) {
+                window.webContents._getPreloadPaths = proxyPreload(window.webContents._getPreloadPaths);
+                preloadContents.add(window.webContents);
+            }
+            if (!preloadSessions.has(window.webContents.session)) {
+                window.webContents.session.getPreloadScripts = proxyPreload(window.webContents.session.getPreloadScripts);
+                preloadSessions.add(window.webContents.session);
+            }
             Runtime.triggerHooks("onBrowserWindowCreated", [window]);
             return window;
         }
@@ -55,14 +57,17 @@ function proxyWindow(func) {
 }
 
 
-function proxyElectron(func) {
+function proxyElectron(func, transport) {
+    const constructors = new WeakMap();
     return new Proxy(func, {
         get(target, property, receiver) {
             const module = Reflect.get(target, property, receiver);
             return property != "exports" ? module : new Proxy(module, {
                 get(target, property, receiver) {
                     const exports = Reflect.get(target, property, receiver);
-                    return property != "BrowserWindow" ? exports : proxyWindow(exports);
+                    if (property != "BrowserWindow") return exports;
+                    if (!constructors.has(exports)) constructors.set(exports, proxyWindow(exports, transport));
+                    return constructors.get(exports);
                 }
             });
         }
@@ -71,5 +76,16 @@ function proxyElectron(func) {
 
 
 exports.installHook = () => {
-    require.cache["electron"] = proxyElectron(require.cache["electron"]);
+    const electron = require("electron");
+    if (electron.app[hookKey]) return;
+    const transport = installTransport(electron, interception, context => {
+        if (!context.channel.includes("RM_IPCFROM_")) return;
+        for (const command of context.commands) {
+            if (command.name == "nodeIKernelSessionListener/onSessionInitComplete") {
+                Runtime.triggerHooks("onLogin", [command.payload.uid]);
+            }
+        }
+    });
+    require.cache["electron"] = proxyElectron(require.cache["electron"], transport);
+    Object.defineProperty(electron.app, hookKey, { value: true });
 }

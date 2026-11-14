@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "name": "neohook",
+      "version": "0.16.0",
+      "revision": "624ac428767d2d4e1f71921f56204e8b546957b5",
+      "archive": {
+        "url": "https://codeload.github.com/AlienDwarf/neohook/tar.gz/624ac428767d2d4e1f71921f56204e8b546957b5",
+        "sha256": "1ce04f810a8310994bcfa203c0258c2b7961409faeb041097df87ee7ba9e3f64",
+        "rootPrefix": "neohook-624ac428767d2d4e1f71921f56204e8b546957b5/"
+      },
+      "exports": [
+        "Cargo.toml",
+        "LICENSE-MIT",
+        "LICENSE-APACHE",
+        "src/"
+      ],
+      "patches": [
+        "neohook.patch"
+      ]
+    },
+    {
+      "name": "iced-x86",
+      "version": "1.21.0",
+      "revision": "c50f29b7bc305696895c075f3fc7719751426b12",
+      "archive": {
+        "url": "https://static.crates.io/crates/iced-x86/iced-x86-1.21.0.crate",
+        "sha256": "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b",
+        "rootPrefix": "iced-x86-1.21.0/"
+      },
+      "exports": [
+        "Cargo.toml",
+        "README.md",
+        "src/"
+      ],
+      "patches": [
+        "iced-x86.patch"
+      ]
+    }
+  ]
+}

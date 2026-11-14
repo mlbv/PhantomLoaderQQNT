@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
 import { Section } from "./elements/section.js";
 import { Panel } from "./elements/panel.js";
 import { List } from "./elements/list.js";

@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "Manifest Schema",
-  "description": "Json schema for LiteLoaderQQNT Plugin manifest.json.",
+  "description": "JSON schema for PhantomLoaderQQNT and compatible LiteLoaderQQNT plugin manifests.",
   "required": [
     "manifest_version",
     "name",
@@ -17,6 +17,12 @@
       "description": "必填, 当前版本为4",
       "enum": [4],
       "default": 4
+    },
+    "api": {
+      "type": "string",
+      "description": "Plugin API: LiteLoader 5.2.1 or the extended PhantomLoader API.",
+      "enum": ["LiteLoader", "PhantomLoader"],
+      "default": "LiteLoader"
     },
     "type": {
       "type": "string",

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
 import search from "./selector/search.js";
 import setting from "./selector/setting.js";
 import title from "./selector/title.js";

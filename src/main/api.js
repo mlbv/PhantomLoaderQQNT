@@ -1,60 +1,99 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 const path = require("path");
 const electron = require("electron");
+const { interception } = require("./interception.js");
+
+const PhantomLoader = exports.PhantomLoader = require("./state.js");
+const LiteLoader = exports.LiteLoader = Object.create(null);
 const store = require("./store.js");
 
-const LiteLoader = Object.create(null);
+PhantomLoader.plugins = Object.create(null);
 
-LiteLoader.plugins = Object.create(null);
-
-LiteLoader.path = Object.create(null);
-LiteLoader.path.root = path.dirname(path.dirname(__dirname));
-LiteLoader.path.profile = process.env.LITELOADERQQNT_PROFILE ?? (globalThis.qwqnt ?
-    path.join(globalThis.qwqnt.framework.paths.data, "LiteLoader") :
-    LiteLoader.path.root
+PhantomLoader.path = Object.create(null);
+PhantomLoader.path.root = path.dirname(path.dirname(__dirname));
+PhantomLoader.path.profile = path.resolve(
+    process.env.PHANTOMLOADERQQNT_PROFILE ?? process.env.LITELOADERQQNT_PROFILE ??
+    (globalThis.qwqnt ? path.join(globalThis.qwqnt.framework.paths.data, "LiteLoader") : PhantomLoader.path.root)
 );
-LiteLoader.path.data = path.join(LiteLoader.path.profile, "data");
-LiteLoader.path.plugins = path.join(LiteLoader.path.profile, "plugins");
+PhantomLoader.path.data = path.join(PhantomLoader.path.profile, "data");
+PhantomLoader.path.plugins = path.join(PhantomLoader.path.profile, "plugins");
 
-LiteLoader.package = Object.create(null);
-LiteLoader.package.liteloader = require(path.join(LiteLoader.path.root, "package.json"));
-LiteLoader.package.qqnt = require(path.join(process.resourcesPath, "app", "package.json"));
+PhantomLoader.package = Object.create(null);
+PhantomLoader.package.phantomloader = require(path.join(PhantomLoader.path.root, "package.json"));
+PhantomLoader.package.liteloader = require("../common/static/liteloader.json");
+PhantomLoader.package.qqnt = require(path.join(process.resourcesPath, "app", "package.json"));
 
-LiteLoader.versions = Object.create(null);
-LiteLoader.versions.liteloader = LiteLoader.package.liteloader.version;
-LiteLoader.versions.qqnt = LiteLoader.package.qqnt.version;
-LiteLoader.versions.electron = process.versions.electron;
-LiteLoader.versions.node = process.versions.node;
-LiteLoader.versions.chrome = process.versions.chrome;
+PhantomLoader.versions = Object.create(null);
+PhantomLoader.versions.phantomloader = PhantomLoader.package.phantomloader.version;
+PhantomLoader.versions.liteloader = PhantomLoader.package.liteloader.version;
+PhantomLoader.versions.qqnt = PhantomLoader.package.qqnt.version;
+PhantomLoader.versions.electron = process.versions.electron;
+PhantomLoader.versions.node = process.versions.node;
+PhantomLoader.versions.chrome = process.versions.chrome;
 
-LiteLoader.os = Object.create(null);
-LiteLoader.os.platform = process.platform;
+PhantomLoader.os = Object.create(null);
+PhantomLoader.os.platform = process.platform;
 
-LiteLoader.api = Object.create(null);
-LiteLoader.api.openExternal = (url) => (electron.shell.openExternal(url), true);
-LiteLoader.api.openPath = (path) => (electron.shell.openPath(path), true);
+PhantomLoader.api = Object.create(null);
+PhantomLoader.api.openExternal = (url) => (electron.shell.openExternal(url), true);
+PhantomLoader.api.openPath = (path) => (electron.shell.openPath(path), true);
 
-LiteLoader.api.config = Object.create(null);
-LiteLoader.api.config.set = store.setPluginConfig;
-LiteLoader.api.config.get = store.getPluginConfig;
+PhantomLoader.api.intercept = Object.create(null);
+PhantomLoader.api.intercept.register = interception.register.bind(interception);
+PhantomLoader.api.intercept.disposeOwner = interception.disposeOwner.bind(interception);
 
-LiteLoader.api.plugin = Object.create(null);
-LiteLoader.api.plugin.install = store.installPlugin;
-LiteLoader.api.plugin.delete = store.deletePlugin;
-LiteLoader.api.plugin.disable = store.disablePlugin;
+let native;
+Object.defineProperty(PhantomLoader.api, "native", {
+    get: () => native ??= process._linkedBinding("phantomloader_native")
+});
+
+PhantomLoader.api.config = Object.create(null);
+PhantomLoader.api.config.set = store.setPluginConfig;
+PhantomLoader.api.config.get = store.getPluginConfig;
+
+PhantomLoader.api.plugin = Object.create(null);
+PhantomLoader.api.plugin.install = store.installPlugin;
+PhantomLoader.api.plugin.delete = store.deletePlugin;
+PhantomLoader.api.plugin.disable = store.disablePlugin;
+
+Object.defineProperty(LiteLoader, "plugins", {
+    enumerable: true,
+    get: () => PhantomLoader.plugins,
+    set: value => { PhantomLoader.plugins = value; }
+});
+LiteLoader.path = PhantomLoader.path;
+LiteLoader.package = Object.assign(Object.create(null), {
+    liteloader: PhantomLoader.package.liteloader,
+    qqnt: PhantomLoader.package.qqnt
+});
+LiteLoader.versions = Object.assign(Object.create(null),
+    Object.fromEntries(Object.entries(PhantomLoader.versions).filter(([name]) => name !== "phantomloader")));
+LiteLoader.os = PhantomLoader.os;
+LiteLoader.api = Object.assign(Object.create(null), {
+    openExternal: PhantomLoader.api.openExternal,
+    openPath: PhantomLoader.api.openPath,
+    config: PhantomLoader.api.config,
+    plugin: PhantomLoader.api.plugin
+});
 
 Object.defineProperty(globalThis, "LiteLoader", {
     get() {
         const stack = new Error().stack.split("\n")[2];
-        const allowed = [LiteLoader.path.root, LiteLoader.path.profile];
-        return allowed.some((item) => stack.includes(item)) ? LiteLoader : null;
+        const allowed = [PhantomLoader.path.root, PhantomLoader.path.profile];
+        return allowed.some(item => stack.includes(item)) ? LiteLoader : null;
     }
 });
 
-electron.ipcMain.on("LiteLoader.LiteLoader.LiteLoader", (event, method, args) => {
+const handleApi = api => (event, method, args) => {
     event.returnValue = method.length ?
-        method.reduce((obj, key) => obj?.[key], LiteLoader)?.(...args) :
-        JSON.parse(JSON.stringify(LiteLoader));
-});
+        method.reduce((obj, key) => obj?.[key], api)?.(...args) :
+        JSON.parse(JSON.stringify(api));
+};
+electron.ipcMain.on("PhantomLoader.PhantomLoader.PhantomLoader", handleApi(PhantomLoader));
+electron.ipcMain.on("LiteLoader.LiteLoader.LiteLoader", handleApi(LiteLoader));
 
 electron.protocol.registerSchemesAsPrivileged([
     {
@@ -83,8 +122,8 @@ exports.protocolRegister = (protocol) => {
             const { host, pathname } = new URL(decodeURI(req.url));
             const filepath = path.normalize(pathname.slice(1));
             switch (host) {
-                case "root": return electron.net.fetch(`file:///${LiteLoader.path.root}/${filepath}`);
-                case "profile": return electron.net.fetch(`file:///${LiteLoader.path.profile}/${filepath}`);
+                case "root": return electron.net.fetch(`file:///${PhantomLoader.path.root}/${filepath}`);
+                case "profile": return electron.net.fetch(`file:///${PhantomLoader.path.profile}/${filepath}`);
                 default: return electron.net.fetch(`file://${host}/${filepath}`);
             }
         });

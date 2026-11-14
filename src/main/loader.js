@@ -1,6 +1,11 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+const { PhantomLoader } = require("./api.js");
 const path = require("path");
 const store = require("./store.js");
-const config = LiteLoader.api.config.get("LiteLoader", require("../common/static/config.json"));
+const config = PhantomLoader.api.config.get("PhantomLoader", require("../common/static/config.json"));
 
 function topologicalSort(plugins) {
     const sorted = {};
@@ -22,13 +27,17 @@ function topologicalSort(plugins) {
 }
 
 function getPluginInstance(plugin) {
+    const api = plugin.manifest.api ?? "LiteLoader";
+    if (api !== "LiteLoader" && api !== "PhantomLoader") {
+        throw new TypeError(`Unknown plugin API: ${api} (${plugin.manifest.slug})`);
+    }
     return {
         manifest: plugin.manifest,
-        incompatible: !plugin.manifest.platform.includes(LiteLoader.os.platform),
+        incompatible: !plugin.manifest.platform.includes(PhantomLoader.os.platform),
         disabled: config.disabled_plugins.includes(plugin.manifest.slug),
         path: {
             plugin: plugin.path,
-            data: path.join(LiteLoader.path.data, plugin.manifest.slug),
+            data: path.join(PhantomLoader.path.data, plugin.manifest.slug),
             injects: {
                 main: plugin.manifest?.injects?.main ? path.join(plugin.path, plugin.manifest.injects.main) : null,
                 preload: plugin.manifest?.injects?.preload ? path.join(plugin.path, plugin.manifest.injects.preload) : null,
@@ -47,6 +56,6 @@ exports.loadAllPlugins = () => {
             plugin.manifest.dependencies?.forEach(slug => dependencies.add(slug));
             plugins[plugin.manifest.slug] = getPluginInstance(plugin);
         }
-        LiteLoader.plugins = topologicalSort(plugins);
+        PhantomLoader.plugins = topologicalSort(plugins);
     }
 }

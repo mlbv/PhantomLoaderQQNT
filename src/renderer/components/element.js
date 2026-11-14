@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
 export class BaseElement extends HTMLElement {
     static observedAttributes = [
         "data-title",

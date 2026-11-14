@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
+import { PhantomLoader } from "../../api.js";
 import { BaseElement } from "../element.js";
 
 
@@ -18,9 +22,9 @@ export class Link extends BaseElement {
         const value = this.getValue();
         try {
             new URL(value);
-            LiteLoader.api.openExternal(value);
+            PhantomLoader.api.openExternal(value);
         } catch {
-            LiteLoader.api.openPath(value);
+            PhantomLoader.api.openPath(value);
         }
     }
 

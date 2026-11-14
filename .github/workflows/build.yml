@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 movblock
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_call:
+    inputs:
+      source-ref:
+        type: string
+        required: true
+    outputs:
+      artifact-id:
+        value: ${{ jobs.windows.outputs.artifact-id }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1-x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.4'
+          package-manager-cache: false
+      - name: Install the pinned stable Rust toolchain
+        run: |
+          rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal --component rustfmt --no-self-update
+          if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
+      - name: Check source syntax
+        run: |
+          foreach ($file in Get-ChildItem src -Recurse -File -Filter '*.js') {
+            node --check $file.FullName
+            if ($LASTEXITCODE) { throw "JavaScript syntax error: $($file.FullName)" }
+          }
+          foreach ($file in Get-ChildItem distribution,native,.github/scripts -Recurse -File -Include '*.ps1','*.psm1' |
+              Where-Object { $_.FullName -notmatch '[\\/]native[\\/](build|tests)[\\/]' }) {
+            $tokens = $null
+            $errors = $null
+            [void][Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
+      - name: Build the native runtime from source
+        run: ./native/build.ps1
+      - name: Check maintained Rust formatting
+        run: |
+          cargo fmt --manifest-path native/Cargo.toml -p phantomloader -p phantomloader-payload -p phantomloader-platform -p neohook-embed -- --check
+          if ($LASTEXITCODE) { throw 'Rust formatting check failed.' }
+      - name: Validate production native images
+        run: |
+          node distribution/check-native.mjs native/build/rust/release
+          if ($LASTEXITCODE) { throw 'Native image validation failed.' }
+      - name: Package the Windows bundle
+        run: |
+          ./distribution/build-release.ps1
+          git diff --exit-code
+          if ($LASTEXITCODE) { throw 'The build changed tracked sources.' }
+          ./distribution/write-build-info.ps1 -OutputDirectory dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload
+        with:
+          name: windows-x64-release
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+            dist/build-info.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

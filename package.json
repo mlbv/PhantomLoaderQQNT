@@ -1,18 +1,26 @@
 {
-    "name": "liteloader-qqnt",
-    "version": "1.4.1",
-    "description": "QQNT 插件加载器 LiteLoaderQQNT —— 轻量 · 简洁 · 开源 · 福瑞",
+    "name": "phantomloader-qqnt",
+    "version": "1.0.0",
+    "description": "PhantomLoaderQQNT — QQNT plugin platform with in-memory native hooks.",
     "main": "./src/main.js",
-    "private": true,
-    "license": "MIT",
-    "author": {
-        "name": "LiteLoaderQQNT",
-        "url": "https://github.com/LiteLoaderQQNT"
+    "scripts": {
+        "test": "node --test tests/*.test.js",
+        "build:native": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File native/build.ps1",
+        "package": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File distribution/build-release.ps1"
     },
-    "homepage": "https://liteloaderqqnt.github.io",
-    "bugs": "https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/issues",
+    "compatibility": {
+        "liteloader": "5.2.1"
+    },
+    "private": true,
+    "license": "LGPL-3.0-or-later",
+    "author": {
+        "name": "movblock",
+        "url": "https://github.com/mlbv"
+    },
+    "homepage": "https://github.com/mlbv/PhantomLoaderQQNT",
+    "bugs": "https://github.com/mlbv/PhantomLoaderQQNT/issues",
     "repository": {
         "type": "git",
-        "url": "https://github.com/LiteLoaderQQNT/LiteLoaderQQNT.git"
+        "url": "https://github.com/mlbv/PhantomLoaderQQNT.git"
     }
 }

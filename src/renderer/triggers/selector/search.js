@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-License-Identifier: MIT
+
+import { PhantomLoader } from "../../api.js";
+
 const search_word = "furry";
 const images_apis = [
     "https://uapis.cn/api/imgapi/furry/img4k.php",
@@ -27,7 +32,7 @@ export default {
         const menu_item = getMenuItem();
         menu_item.addEventListener("click", () => {
             const random_image = images_apis[Math.floor(Math.random() * images_apis.length)];
-            LiteLoader.api.openExternal(random_image);
+            PhantomLoader.api.openExternal(random_image);
         });
         adder_button.addEventListener("click", () => {
             const search_input = adder_button.parentElement.querySelector("input");

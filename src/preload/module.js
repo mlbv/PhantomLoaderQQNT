@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 class File {
     static request(path, method) {
         const xhr = new XMLHttpRequest();
         xhr.open(method, `local:///${path}`, false);
         xhr.send();
-        return xhr.status == 200 && xhr.responseText;
+        return xhr.status == 200 && (method === "HEAD" || xhr.responseText);
     }
     static read(path) { return File.request(path, "GET"); }
     static exists(path) { return !!File.request(path, "HEAD"); }
@@ -51,7 +55,7 @@ class Module {
     }
     #resolve(id, base) {
         const resolved = Path.normalize(Path.isAbsolute(id) ? id : `${base}/${id}`);
-        for (const ext of ["", ".js", ".json"]) if (File.exists(resolved + ext)) return resolved + ext;
+        for (const ext of ["", ".js", ".cjs", ".json"]) if (File.exists(resolved + ext)) return resolved + ext;
         throw new Error(`Module not found: ${id} (from ${base})`);
     }
     #load(file) {
@@ -61,12 +65,16 @@ class Module {
             __filename: file, __dirname: Path.dirname(file),
             LiteLoader: module.exports.LiteLoader
         };
+        if (file.startsWith(Path.normalize(`${module.exports.PhantomLoader.path.root}/src`) + "/")) {
+            context.PhantomLoader = module.exports.PhantomLoader;
+        }
         switch (Path.extname(file)) {
-            case ".js": return new Function(...Object.keys(context), File.read(file))(...Object.values(context));
+            case ".js":
+            case ".cjs": return new Function(...Object.keys(context), File.read(file))(...Object.values(context));
             case ".json": return this.exports = JSON.parse(File.read(file));
             default: throw new Error(`Unsupported module extension: ${file}`);
         }
     }
 }
 
-new Module(null).require(Path.normalize(`${module.exports.LiteLoader.path.root}/src/preload.js`));
+new Module(null).require(Path.normalize(`${module.exports.PhantomLoader.path.root}/src/preload.js`));

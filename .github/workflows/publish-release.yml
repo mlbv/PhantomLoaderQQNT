@@ -1,0 +1,134 @@
+# SPDX-FileCopyrightText: 2026 movblock
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+name: Publish verified release
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'mlbv/PhantomLoaderQQNT' && github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.signatures.outputs.commit }}
+      tag-object: ${{ steps.signatures.outputs.tag-object }}
+      version: ${{ steps.signatures.outputs.version }}
+      asset-stem: ${{ steps.signatures.outputs.asset-stem }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/main
+          path: trusted
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the PGP-signed tag and commit
+        id: signatures
+        shell: pwsh
+        working-directory: source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          if ($env:RELEASE_REF -cne "refs/tags/$env:RELEASE_TAG") { throw 'Only tag events may publish a release.' }
+          $verified = & "$env:GITHUB_WORKSPACE/trusted/.github/scripts/verify-release.ps1" -Tag $env:RELEASE_TAG -ExpectedCommit $env:RELEASE_COMMIT -ExpectedPrimaryFingerprint '55BD0E0BE592652ED242FD849ED1BD313EFD5297'
+          $profile = Get-Content distribution/profile.json -Raw | ConvertFrom-Json
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $version = $env:RELEASE_TAG.Substring(1)
+          if ($profile.platformVersion -cne $version -or $profile.loaderVersion -cne $version -or $package.version -cne $version) {
+            throw 'Release tag, distribution profile and package versions must agree.'
+          }
+          git merge-base --is-ancestor $verified.Commit origin/main
+          if ($LASTEXITCODE) { throw 'Release commit must be on main.' }
+          "commit=$($verified.Commit)" >> $env:GITHUB_OUTPUT
+          "tag-object=$($verified.TagObject)" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "asset-stem=PhantomLoaderQQNT-$version-QQNT-$($profile.qqVersion)-win-x64" >> $env:GITHUB_OUTPUT
+  build:
+    needs: verify
+    uses: ./.github/workflows/build.yml
+    with:
+      source-ref: ${{ needs.verify.outputs.commit }}
+    permissions:
+      contents: read
+  publish:
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_COMMIT: ${{ needs.verify.outputs.commit }}
+      RELEASE_TAG_OBJECT: ${{ needs.verify.outputs.tag-object }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      ASSET_STEM: ${{ needs.verify.outputs.asset-stem }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: dist
+          digest-mismatch: error
+      - name: Verify the received archive hashes and build identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          test "$(ls -1A | wc -l)" -eq 3
+          sha256sum --check "$ASSET_STEM.zip.sha256"
+          jq --exit-status --arg commit "$RELEASE_COMMIT" --arg tag "refs/tags/$RELEASE_TAG" \
+            '.commit == $commit and .ref == $tag' build-info.json
+      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        id: provenance
+        with:
+          create-storage-record: false
+          subject-path: |
+            dist/*.zip
+            dist/*.zip.sha256
+            dist/build-info.json
+      - name: Publish the complete release
+        shell: bash
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$PROVENANCE_BUNDLE" dist/provenance.jsonl
+          gh attestation verify "dist/$ASSET_STEM.zip" --repo "$GH_REPO" --bundle dist/provenance.jsonl \
+            --cert-identity "https://github.com/$GH_REPO/.github/workflows/publish-release.yml@refs/heads/main" \
+            --source-digest "$RELEASE_COMMIT" --source-ref "refs/tags/$RELEASE_TAG" \
+            --deny-self-hosted-runners
+          remote_tag=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')
+          test "$remote_tag" = "$RELEASE_TAG_OBJECT"
+          remote_commit=$(gh api "repos/$GH_REPO/git/tags/$remote_tag" --jq '.object.sha')
+          test "$remote_commit" = "$RELEASE_COMMIT"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Built from PGP-signed tag \`$RELEASE_TAG\` and commit \`$RELEASE_COMMIT\` on GitHub-hosted Windows runners.
+
+          Download the Windows x64 ZIP to install and use its SHA-256 file to check integrity. Corresponding source is available through GitHub's Source code downloads for this tag. \`build-info.json\` records the source and build environment; \`provenance.jsonl\` contains GitHub's build attestations.
+
+          Verification: https://github.com/$GH_REPO/blob/$RELEASE_COMMIT/docs/releases.md
+          Build: https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID
+          EOF
+          gh release create "$RELEASE_TAG" \
+            "dist/$ASSET_STEM.zip" "dist/$ASSET_STEM.zip.sha256" \
+            dist/build-info.json dist/provenance.jsonl \
+            --verify-tag --draft --title "PhantomLoaderQQNT $RELEASE_VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release edit "$RELEASE_TAG" --draft=false --latest

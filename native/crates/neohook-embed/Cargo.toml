@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 movblock
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+[package]
+name = "neohook-embed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "neohook_embed"
+test = false
+doctest = false
+
+[dependencies]
+neohook-core = { package = "neohook", path = "../../build/dependencies/neohook" }
+iced-x86 = { path = "../../build/dependencies/iced-x86", version = "=1.21.0", default-features = false, features = ["decoder", "instr_info", "no_std"] }
+windows-sys.workspace = true

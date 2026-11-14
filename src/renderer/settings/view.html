@@ -1,3 +1,7 @@
+<!-- SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT -->
+<!-- SPDX-FileCopyrightText: 2026 movblock -->
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+
 <template id="plugin-item">
     <setting-item>
         <div class="info-area">
@@ -51,14 +55,18 @@
     <setting-panel class="qwqnt" style="display: none;">
         <setting-list data-direction="column">
             <setting-item>
-                <setting-text>LiteLoader 作为 QwQNT 插件运行中</setting-text>
+                <setting-text>PhantomLoader 作为 QwQNT 插件运行中</setting-text>
             </setting-item>
         </setting-list>
     </setting-panel>
     <setting-panel>
         <setting-list data-direction="row">
             <setting-item class="liteloader">
-                <setting-text>LiteLoader</setting-text>
+                <setting-text>PhantomLoader</setting-text>
+                <setting-text data-type="secondary" class="version"></setting-text>
+            </setting-item>
+            <setting-item class="compatibility">
+                <setting-text>LiteLoader 兼容版本</setting-text>
                 <setting-text data-type="secondary" class="version"></setting-text>
             </setting-item>
             <setting-item class="qqnt">
@@ -82,8 +90,23 @@
     <setting-panel>
         <setting-list data-direction="column" class="new">
             <setting-item>
-                <setting-text>正在发现 LiteLoaderQQNT 是否有新版本</setting-text>
+                <setting-text>正在发现 PhantomLoaderQQNT 是否有新版本</setting-text>
                 <setting-button data-type="secondary">你先别急</setting-button>
+            </setting-item>
+        </setting-list>
+    </setting-panel>
+</setting-section>
+
+
+<setting-section data-title="DLVM 程序捕获" class="capture">
+    <setting-panel>
+        <setting-list data-direction="column">
+            <setting-item>
+                <div>
+                    <setting-text>捕获服务器下发的 DLVM 程序</setting-text>
+                    <setting-text data-type="secondary">默认启用。捕获匹配程序后保存样本并终止 QQ，再显示 GitHub 报告窗口。更改将在重启后生效。</setting-text>
+                </div>
+                <setting-switch></setting-switch>
             </setting-item>
         </setting-list>
     </setting-panel>
@@ -124,7 +147,7 @@
             <setting-item>
                 <div>
                     <setting-text>本体目录位置</setting-text>
-                    <setting-text data-type="secondary">LiteLoaderQQNT 本体的安装位置，可以安装到任意位置</setting-text>
+                    <setting-text data-type="secondary">PhantomLoaderQQNT 本体的安装位置，可以安装到任意位置</setting-text>
                     <setting-text data-type="secondary">
                         <setting-link class="root"></setting-link>
                     </setting-text>
@@ -133,7 +156,7 @@
             <setting-item>
                 <div>
                     <setting-text>数据目录位置</setting-text>
-                    <setting-text data-type="secondary">可通过 LITELOADERQQNT_PROFILE 环境变量指定数据存放位置</setting-text>
+                    <setting-text data-type="secondary">可通过 PHANTOMLOADERQQNT_PROFILE 环境变量指定数据存放位置</setting-text>
                     <setting-text data-type="secondary">
                         <setting-link class="profile"></setting-link>
                     </setting-text>
@@ -149,8 +172,8 @@
         <setting-list data-direction="column">
             <setting-item>
                 <div>
-                    <setting-text>LiteLoaderQQNT</setting-text>
-                    <setting-text data-type="secondary">LiteLoaderQQNT 是 QQNT 的插件加载器，一般在 QQNT 的环境内简称为 LiteLoader。</setting-text>
+                    <setting-text>PhantomLoaderQQNT</setting-text>
+                    <setting-text data-type="secondary">PhantomLoaderQQNT 是基于 LiteLoaderQQNT 的 QQNT 插件平台，提供内存注入与原生钩子 API。</setting-text>
                     <setting-text data-type="secondary">它可以让你自由地为 QQNT 添加各种插件，实现美化主题、增加功能等各种功能。</setting-text>
                 </div>
             </setting-item>
@@ -158,7 +181,7 @@
                 <div>
                     <setting-text>开源协议</setting-text>
                     <setting-text data-type="secondary">
-                        <setting-link data-value="https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/blob/main/LICENSE">MIT License</setting-link>
+                        <setting-link data-value="https://github.com/mlbv/PhantomLoaderQQNT/blob/main/LICENSE">GNU LGPL 3.0 or later</setting-link>
                     </setting-text>
                 </div>
             </setting-item>
@@ -168,25 +191,17 @@
         <setting-list data-direction="column">
             <setting-item>
                 <div>
-                    <setting-text>LiteLoaderQQNT 官网</setting-text>
+                    <setting-text>PhantomLoaderQQNT 项目主页</setting-text>
                     <setting-text data-type="secondary">
-                        <setting-link data-value="https://liteloaderqqnt.github.io"></setting-link>
+                        <setting-link data-value="https://github.com/mlbv/PhantomLoaderQQNT"></setting-link>
                     </setting-text>
                 </div>
             </setting-item>
             <setting-item>
                 <div>
-                    <setting-text>GitHub 仓库</setting-text>
+                    <setting-text>PhantomLoaderQQNT Discord 社区</setting-text>
                     <setting-text data-type="secondary">
-                        <setting-link data-value="https://github.com/LiteLoaderQQNT"></setting-link>
-                    </setting-text>
-                </div>
-            </setting-item>
-            <setting-item>
-                <div>
-                    <setting-text>Telegram 群组</setting-text>
-                    <setting-text data-type="secondary">
-                        <setting-link data-value="https://t.me/LiteLoaderQQNT"></setting-link>
+                        <setting-link data-value="https://discord.gg/8nBnd3dTG"></setting-link>
                     </setting-text>
                 </div>
             </setting-item>
@@ -202,7 +217,7 @@
                 <div></div>
                 <div>
                     <span>——</span>
-                    <span class="hitokoto_author">LiteLoaderQQNT</span>
+                    <span class="hitokoto_author">PhantomLoaderQQNT</span>
                 </div>
             </setting-item>
         </setting-list>

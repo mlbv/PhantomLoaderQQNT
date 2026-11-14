@@ -1,98 +1,83 @@
-# LiteLoaderQQNT
+<!-- SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT -->
+<!-- SPDX-FileCopyrightText: 2026 movblock -->
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/LiteLoaderQQNT/LiteLoaderQQNT?logo=github)](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/releases)
-[![Follow on Telegram](https://img.shields.io/badge/Follow-Telegram-blue?logo=telegram)](https://t.me/LiteLoaderQQNT)
+# PhantomLoaderQQNT
 
-> 轻量 · 简洁 · 开源 · 福瑞
+[![License: LGPL-3.0-or-later](https://img.shields.io/badge/License-LGPL--3.0--or--later-blue.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/mlbv/PhantomLoaderQQNT?logo=github)](https://github.com/mlbv/PhantomLoaderQQNT/releases)
+[![Discord](https://img.shields.io/badge/Discord-加入社区-5865F2?logo=github&logoColor=white)](https://discord.gg/8nBnd3dTG)
 
-LiteLoaderQQNT 是 QQNT 的插件加载器，一般在 QQNT 的环境内简称为 LiteLoader。它可以让你自由地为 QQNT 添加各种插件，实现美化主题、增加功能等各种功能。详情查看 LiteLoaderQQNT 官网：<https://liteloaderqqnt.github.io>。
+一个基于 LiteLoaderQQNT 的 QQNT 插件平台。
 
-> [!CAUTION]
-> QQ 安全中心可能会将 LiteLoaderQQNT 当作“非法外挂工具”并下线您的设备，还有可能封禁您的账号。**请谨慎使用 LiteLoaderQQNT。**
+**版本 1.0.0 · LiteLoader API 兼容版本 5.2.1 · Windows 11 x64 · QQNT 9.9.37-54395**
 
-## 安装
+## 安装与启动
 
-> [!NOTE]
-> 此版本的 LiteLoaderQQNT 需搭配频道内未公开的 `dbghelp.dll` 方可使用。
-> 或使用 https://github.com/LiteLoaderQQNT/QQNTFileVerifyPatch/releases/tag/Patcher_v1.0.4 修补 QQNT.dll 文件
+从 [Releases](https://github.com/mlbv/PhantomLoaderQQNT/releases) 下载完整的 Windows x64 离线发行包，核对 SHA-256 后解压到 QQ 安装目录以外的新目录。
 
-### 下载 LiteLoaderQQNT 本体
+1. 关闭 QQ。
+2. 运行 `Install.cmd`，或在 PowerShell 中执行 `.\Install.ps1`。写入 Program Files 下的 QQ 安装通常需要管理员权限。
+3. 使用桌面上的 **QQNT (PhantomLoader)** 快捷方式启动。
 
-你需要先下载 LiteLoaderQQNT 到任意位置，以下有两种方式：
+默认运行目录为 QQ 安装目录下的 `PhantomLoaderQQNT`，插件和数据位于 `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`。支持通过安装参数指定其他位置。卸载时运行发行包或已安装目录中的 `Uninstall.cmd`；插件与数据保留。
 
-- Release （稳定版）：前往 [Release](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/releases) 页，下载 `LiteLoaderQQNT.zip` 文件解压到任意位置。
-- Clone （最新提交）：使用 Git 工具将 LiteLoaderQQNT 仓库 Clone 到本地任意位置。
+完整参数、校验与卸载说明见 [Windows distribution](docs/distribution.md)。发行包由 GitHub Actions 从 PGP 签名的标签与提交构建，同时提供匹配源码、SHA-256 和构建来源证明；校验步骤见 [Release verification](docs/releases.md)。
 
-    ```bash
-    git clone --depth 1 https://github.com/LiteLoaderQQNT/LiteLoaderQQNT.git
-    ```
+## 插件与兼容性
 
-### 在 Windows 上绕过 QQNT 文件校验
+在设置中的 **PhantomLoaderQQNT** 页面安装、启用或移除插件，也可以将插件目录放入当前 profile 的 `plugins` 目录。
 
-请根据你的操作系统架构在 [Telegram 群](https://t.me/LiteLoaderQQNT)内下载 `dbghelp_*.dll` 文件，将其重命名为 `dbghelp.dll` 后放入 `QQ.exe` 同级目录下。
+插件通过 manifest 的 `"api": "PhantomLoader"` 选择扩展 API，并在 `onLoad(api)` 中接收。默认 API 为 LiteLoader 5.2.1，原有插件继续使用 `LiteLoader` 全局对象；两个 API 共享插件注册表与配置。
 
-> [!NOTE]
-> 加群前请先查看群简介。
-> 加群时请查看验证机器人 [NeoAuthBot](https://t.me/NeoAuthBot) 的消息
+~~~js
+exports.onLoad = (PhantomLoader) => {
+    PhantomLoader.versions.phantomloader; // "1.0.0"
+    PhantomLoader.api.intercept.register("my-plugin", "external", handler);
+};
+~~~
 
-### 修改文件以安装
-1. 转到 QQNT 安装目录。以 `9.9.21-38711` 为例，路径为 `QQNT\versions\9.9.21-38711（取决于你的版本）\resources\app`
+插件清单继续支持 LiteLoader manifest v4。兼容 API 的范围与配置路径见 [Compatibility](docs/compatibility.md)。
 
-2. 创建 `app_launcher`目录。
-
-3. 在该目录内创建 `LiteLoader.js` 文件（文件名可随意设定， 需保留拓展名 `.js`），并写入以下内容：
-
-    ```javascript
-    require(String.raw`修改为 LiteLoaderQQNT 本体的绝对路径，保留反引号`)
-    ```
-
-4. 修改 `app\package.json` 文件，将 `main` 后值改为 `./app_launcher/LiteLoader.js`，其中 `LiteLoader` 即为你创建的文件名。
-
-   ```diff
-   -   "main": "./application.asar/app_launcher/index.js",
-   +   "main": "./app_launcher/LiteLoader.js",
-   ```
-
-### 更改插件数据目录 （可选）
-
-支持设置 `LITELOADERQQNT_PROFILE` 环境变量指定 `data` `plugins` 存储位置，即可不在本体目录进行读写操作。当本体目录无写权限时（如 MacOS 与 Linux 平台 QQNT，以及类似于 flatpak 打包的 QQNT），请设定该变量到当前用户具有可读写权限的位置。
-
-如果你想将本体与存储目录合并在一起需将 `LITELOADERQQNT_PROFILE` 环境变量删除，将 `data` `plugins` 移动回本体根目录下。
-
-### 检查是否安装成功
-
-按照上述教程完成安装后，有两种方法检查 LiteLoaderQQNT 是否成功安装：
-
-- 运行 QQNT 并打开设置，查看左侧列表是否出现 LiteLoaderQQNT 选项
-- 使用终端运行 QQNT 查看是否有 LiteLoaderQQNT 相关内容输出显示
-
-如果有显示，即安装成功，玩的开心！
-
-## 插件
-
-### 正常操作
-
-在设置界面即可看到安装/卸载插件功能；也可以使用社区开发的插件市场类插件（例如 [plugin-list-viewer](https://github.com/ltxhhz/LL-plugin-list-viewer)），在其中进行操作。
-
-### 手动操作
-
-将插件目录移动到 `LiteLoaderQQNT/plugins` 文件夹内以安装，在 `plugins` 目录中删除对应目录以卸载（插件数据在 `data` 目录下对应目录）。
-
-### 寻找
-
-可以通过以下方式寻找插件：
-
-- 官网首页
-- 第三方插件市场
-- GitHub 搜索
-
-官方维护着一份插件列表，收录了已知的大部分插件，可在官网首页中查看详情。此外，还有一份 [JSON 格式的插件列表](https://github.com/LiteLoaderQQNT/Plugin-List/blob/v4/plugins.json)。
+`PHANTOMLOADERQQNT_PROFILE` 指定 profile；旧的 `LITELOADERQQNT_PROFILE` 仍可使用，新变量优先。
 
 ## 开发
 
-详见[官方文档](https://liteloaderqqnt.github.io/docs/introduction.html)。
+- [Interception API](docs/interception.md)：主进程消息与外部链接拦截。
+- [Native API](docs/native.md)：主进程原生地址、调用与钩子。
+- [Native runtime architecture](native/README.md)：启动器、payload 与原生钩子的内部实现及构建方式。
+- [Distribution build](docs/distribution.md#building-the-bundle)：构建完整离线发行包。
+- [QQNT findings](docs/qqnt.md)：QQNT 遥测、安全报告与 DLVM 功能。
+
+## 安全
+
+手动映射的 payload 不出现在 `K32EnumProcessModules` 等常规模块枚举结果中，但仍可通过内存查询、代码完整性、函数表、调用栈、线程、VEH、PEB、IPC 和句柄检查被发现；具体限制见[原生运行时说明](native/README.md#inspection-limits)。每次 QQNT 更新后均须重新分析二进制，以检查是否新增或改变了用户态检测机制。
+
+### 遥测
+
+我们强烈建议自行配置hosts阻断腾讯遥测域名。
+
+### 虚拟机
+
+QQNT 包含大量的虚拟机检测代码，目前 PhantomLoader 并没有做相关绕过。如必要，请尽量将你的虚拟机伪装的像真机一点。
+
+### DLVM 拦截和样本捕获
+
+QQNT 允许服务端**动态下发并静默执行*任意*程序**。为避免未知的探测代码在 PhantomLoader 加载后运行，DLVM 捕获默认启用，并在第三方插件加载前拦截匹配的服务器下发程序。发现任务后，系统会先将程序字节与元数据写入 profile 的 `data/dlvm_capture/captures`，再终止 QQ 主进程，以阻止该回调继续执行。
+
+通过 PhantomLoader 快捷方式启动时，独立启动器会在 QQ 退出后显示报告窗口。
+> [!NOTE]
+> PhantomLoader仅会在本地打包样本和元数据并提供 [本仓库的 GitHub Issue](https://github.com/mlbv/PhantomLoaderQQNT/issues) 入口；样本本身须手动上传
+
+设置中的 **DLVM 程序捕获** 可关闭此功能，重启后生效；也可以在 profile 的 `data/LiteLoader/config.json` 中设置 `"enable_dlvm_capture": false`。详细行为见 [发行说明](docs/distribution.md#default-program-capture)。
 
 ## 许可证
 
-LiteLoaderQQNT 采用 [MIT 许可证](./LICENSE) 进行开源。
+代码及文档中的代码示例采用 [GNU LGPL 3.0 或后续版本](./LICENSE)，文档采用 [Creative Commons Attribution 4.0 International（CC BY 4.0）](./LICENSES/CC-BY-4.0.txt)。许可文本见 [LICENSES](./LICENSES)，第三方许可见 [native/licenses](./native/licenses)。
+
+## 感谢
+
+PhantomLoaderQQNT 和 LiteLoaderQQNT 所有开发者和贡献者的提交。
+
+- [LiteLoaderQQNT 原版仓库](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT)
+- [MrNya907/LiteLoaderQQNT 前置分支](https://github.com/MrNya907/LiteLoaderQQNT)

@@ -1,125 +1,54 @@
-name: 回报错误
-description: 在使用框架过程中遇到了错误
+# SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+# SPDX-FileCopyrightText: 2026 movblock
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+name: 错误报告
+description: 报告 PhantomLoaderQQNT 的安装、启动或插件 API 问题
 title: "[Bug]: "
 labels: ["bug"]
-
 body:
   - type: markdown
     attributes:
       value: |
-        ## 感谢您愿意为 LiteLoaderQQNT 提交错误回报
-        ## 以下是一些注意事项，请务必阅读让我们能够更容易处理
-
-        ### ❗ | 确定没有相同问题的ISSUE已被提出。
-        ### 🌎 | 请准确填写环境信息。
-        ### ❔ | 使用命令行模式启动进行复现，并提供完整日志内容。请自行删除日志内存在的个人信息及敏感内容。
-        ### 如果您不知道如何有效、精准地表述，我们建议您先阅读[《提问的智慧》](https://github.com/ryanhanwu/How-To-Ask-Questions-The-Smart-Way)，另有英文原文可供参考: [How to Ask Questions the Smart Way](http://www.catb.org/~esr/faqs/smart-questions.html)
-
-        #### 在 Windows 下显示终端日志
-
-        1. 桌面右键 QQ 图标，点击 "打开文件所在位置"。
-        2. 在出现的文件夹窗口内按住 `Shift` 右键，点击 "在此处打开命令窗口" 或 "在此处打开 PowerShell 窗口"。
-        3. 在弹出的控制台窗口内输入 ".\QQ.exe --enable-logging" 并按下 `Enter`。
-
-        #### 在 Linux 下显示终端日志
-
-        1. 既然已经用上 Linux 了，那应该知道如何操作
-
-        ### 在 MacOS 下显示终端日志
-
-        1. 点按程序坞中的“启动台”图标，在搜索栏中键入 "终端"，然后点按 "终端"。
-        2. 在弹出的终端内输入 "open -a QQ" 并按下 `Enter`。
-
-        ---
-  - type: checkboxes
-    id: terms
-    attributes:
-      label: 请确保您已阅读以上注意事项，并勾选下方的确认框。
-      options:
-        - label: 我已知晓并同意，如果我不按照模板提供的指示进行填写，则我的 Issue 可能会被无条件关闭/锁定。
-          required: true
-        - label: 我已使用一个全新安装的 QQNT 和最新的 LiteLoaderQQNT (当前 Commit / Release) 且无其他插件的环境下测试过，问题依旧存在。
-          required: true
-        - label: 我已知晓并同意，如果我使用的是 Windows，则 Windows 和 QQNT 均需为 ARM64 或 x64 架构，否则我的 Issue 可能会被无条件关闭/锁定。
-          required: true
-        - label: 我已在 [Issue Tracker](https://github.com/LiteLoaderQQNT/LiteLoaderQQNT/issues) 中找过我要提出的问题，没有找到类似 Issue。
-          required: true
-        - label: 我已知晓并同意，此处仅用于汇报 LiteLoaderQQNT 框架中存在的问题，否则我的 Issue 可能会被无条件关闭/锁定。
-          required: true
-        - label: (可选) 我在同意上一条的同时, 同意本组织可能会代我向相关项目反馈该问题, 以便更好地解决该问题。
-          required: false
-
-  - type: markdown
-    attributes:
-      value: |
-        ## 环境信息
-
+        请先搜索已有 Issue。请注明完整的 QQNT 版本和 PhantomLoaderQQNT 版本，并删除日志中的账号、聊天内容和其他个人信息。
+        当前发行版支持 Windows 11 x64 / QQNT 9.9.37-54395。请通过 QQNT (PhantomLoader) 快捷方式启动。
   - type: input
-    id: env-QQNT-version
+    id: phantomloader-version
     attributes:
-      label: QQNT 版本 (如在沙箱或类似 Flatpak 环境中运行, 请注明)
+      label: PhantomLoaderQQNT 版本或 Commit
     validations:
       required: true
-
   - type: input
-    id: env-LiteLoaderQQNT-version
+    id: qqnt-version
     attributes:
-      label: LiteLoaderQQNT Release 版本（或 Commit Id）
+      label: QQNT 完整版本
+      placeholder: 9.9.37-54395
     validations:
       required: true
-
   - type: input
-    id: env-dbghelp-version
+    id: windows-version
     attributes:
-      label: dbghelp 版本及架构 (如在 Windows 平台上运行, 请注明)
-    validations:
-      required: false
-
-  - type: dropdown
-    id: env-system
-    attributes:
-      label: 运行环境
-      description: 选择系统版本
-      options:
-        - Windows
-        - Linux (请说明发行版)
-        - MacOS
-        - 其它（请在下方说明）
+      label: Windows 版本与架构
     validations:
       required: true
-
   - type: textarea
-    id: reproduce-steps
+    id: reproduce
     attributes:
       label: 重现步骤
-      description: |
-        我们需要执行哪些操作才能让 Bug 出现？
-        简洁清晰的重现步骤能够帮助我们更迅速地定位问题所在。
+      description: 请列出已启用的插件，并说明问题是否也在禁用第三方插件时出现。
     validations:
       required: true
-
   - type: textarea
-    id: expected-results
+    id: expected
     attributes:
-      label: 期望的结果是什么？
+      label: 期望行为与实际结果
     validations:
       required: true
-
-  - type: textarea
-    id: actual-results
-    attributes:
-      label: 实际的结果是什么？
-    validations:
-      required: true
-
   - type: textarea
     id: logs
     attributes:
-      label: 日志记录
-    validations:
-      required: true
-
+      label: 日志与安装器错误信息
   - type: textarea
-    id: extra-description
+    id: extra
     attributes:
-      label: 补充说明（可选）
+      label: 补充说明

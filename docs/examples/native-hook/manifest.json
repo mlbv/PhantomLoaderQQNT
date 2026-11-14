@@ -1,0 +1,12 @@
+{
+    "manifest_version": 4,
+    "api": "PhantomLoader",
+    "type": "extension",
+    "name": "Native hook example",
+    "slug": "native_hook_example",
+    "description": "Observe a QQNT native call and forward it unchanged",
+    "version": "0.1.0",
+    "authors": [{ "name": "PhantomLoaderQQNT contributors" }],
+    "platform": ["win32"],
+    "injects": { "main": "./main.js" }
+}

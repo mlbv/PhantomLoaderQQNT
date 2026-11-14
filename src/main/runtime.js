@@ -1,8 +1,13 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
 exports.Runtime = class {
 
     static #plugins = new Map();
 
-    static registerPlugin(plugin, exports) {
+    static registerPlugin(plugin, exports, api) {
+        exports.onLoad?.(api);
         this.#plugins.set(plugin, exports);
     }
 

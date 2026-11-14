@@ -1,0 +1,1056 @@
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -3,76 +3,16 @@
+ version = "0.16.0"
+ edition = "2024"
+ rust-version = "1.88"
+-description = "A powerful, transactional, thread-safe function hooking library for Windows (x86/x64), written in Rust."
+ license = "MIT OR Apache-2.0"
+-repository = "https://github.com/aliendwarf/neohook"
+-readme = "README.md"
+-keywords = [
+-    "hooking",
+-    "detours",
+-    "win32",
+-    "x86_64",
+-    "debugging",
+-]
+-categories = ["os::windows-apis", "development-tools::debugging"]
+-exclude = ["/.github", "/.gitignore", "/*.pdb", "/.vscode", "/target"]
++repository = "https://github.com/AlienDwarf/neohook"
+
+ [lib]
+-crate-type = ["rlib", "cdylib", "staticlib"]
++path = "src/core.rs"
++test = false
+ doctest = false
+
+-[features]
+-generate-headers = ["dep:cbindgen"]
+-# Opt-in diagnostics from the commit path. Off by default
+-debug-log = []
++[workspace]
+
+ [dependencies]
+-windows-sys = { version = "0.61.2", features = [
+-    "Win32_Foundation",
+-    "Win32_System_Memory",
+-    "Win32_System_Threading",
+-    "Win32_System_LibraryLoader",
+-    "Win32_System_SystemServices",
+-    "Win32_System_Diagnostics_Debug",
+-    "Win32_System_Diagnostics_ToolHelp",
+-    "Win32_System_WindowsProgramming",
+-    "Win32_System_SystemInformation",
+-    "Win32_System_Kernel",
+-] }
+-iced-x86 = { version = "1.21.0", default-features = false, features = [
+-    "decoder",
+-    "instr_info",
+-    "no_std",
+-    "encoder",
+-    "block_encoder",
+-    "no_vex",
+-    "no_evex",
+-    "no_xop",
+-    "no_d3now",
+-] }
+-
+-[dev-dependencies]
+-# Extra windows-sys surface used only by examples (windowing / message loop /
+-# OpenGL context setup). Direct3D 11 / 9 are not in windows-sys, so those
+-# examples load them at runtime and read the COM vtable by hand.
+-windows-sys = { version = "0.61.2", features = [
+-    "Win32_Foundation",
+-    "Win32_UI_WindowsAndMessaging",
+-    "Win32_UI_Input_KeyboardAndMouse",
+-    "Win32_Graphics_Gdi",
+-    "Win32_Graphics_OpenGL",
+-    "Win32_System_LibraryLoader",
+-] }
+-
+-[build-dependencies]
+-cbindgen = { version = "0.29.2", optional = true }
+-
+-[profile.release]
+-opt-level = 2
+-lto = true
+-codegen-units = 1
+-strip = true
+-
+-[package.metadata.docs.rs]
+-default-target = "x86_64-pc-windows-msvc"
+-targets = []
++windows-sys = { version = "=0.61.2", features = ["Win32_Foundation"] }
++iced-x86 = { path = "../iced-x86", version = "=1.21.0", default-features = false, features = ["decoder", "instr_info", "no_std", "encoder", "block_encoder"] }
+diff --git a/src/code.rs b/src/code.rs
+--- a/src/code.rs
++++ b/src/code.rs
+@@ -1,9 +1,8 @@
+ // Copyright (c) 2026 NeoHook Authors
+ // SPDX-License-Identifier: MIT OR Apache-2.0
+
+-use windows_sys::Win32::System::Memory::{
+-    MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_GUARD, PAGE_NOACCESS, VirtualQuery,
+-};
++use crate::Memory;
++use windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER;
+
+ const MAX_JUMP_FOLLOWS: usize = 32;
+
+@@ -14,69 +13,78 @@
+ /// import/forwarder entry stubs, where the exported or referenced entry point
+ /// is only a `jmp` to the actual implementation.
+ ///
+-/// Returns null when `pointer` is null. If no recognized jump stub is present,
+-/// the original pointer is returned.
++/// The visitor can stop at an active patch before its jump is followed.
++/// Null pointers, invalid reads, cycles and excessive indirection return an error.
++/// If no recognized jump stub is present, the original pointer is returned.
+ ///
+ /// # Safety
+ ///
+ /// `pointer` and any recognized thunk target slots must refer to readable
+ /// process memory. Invalid pointers can still cause undefined behavior on
+ /// platforms where the OS allows the query but a later read faults.
+-pub unsafe fn detour_code_from_pointer(pointer: *const u8) -> *mut u8 {
++pub unsafe fn resolve<M: Memory>(
++    pointer: *const u8,
++    mut stop: impl FnMut(*const u8) -> Result<bool, u32>,
++) -> Result<*const u8, u32> {
+     if pointer.is_null() {
+-        return std::ptr::null_mut();
++        return Err(ERROR_INVALID_PARAMETER);
+     }
+
+     let mut current = pointer;
+     let mut seen = [0usize; MAX_JUMP_FOLLOWS];
+     for seen_len in 0..MAX_JUMP_FOLLOWS {
++        if stop(current)? {
++            return Ok(current);
++        }
+         let addr = current as usize;
+         if seen[..seen_len].contains(&addr) {
+-            break;
++            return Err(ERROR_INVALID_PARAMETER);
+         }
+         seen[seen_len] = addr;
+
+-        let Some(next) = (unsafe { detour_code_from_pointer_once(current) }) else {
+-            break;
++        let Some(next) = (unsafe { detour_code_from_pointer_once::<M>(current)? }) else {
++            return Ok(current);
+         };
+
+         if next.is_null() {
+-            break;
++            return Err(ERROR_INVALID_PARAMETER);
+         }
+
+         current = next;
+     }
+
+-    current as *mut u8
+-}
+-
+-unsafe fn detour_code_from_pointer_once(src: *const u8) -> Option<*const u8> {
+-    let op0 = unsafe { read_value::<u8>(src)? };
+-
+-    match op0 {
++    Err(ERROR_INVALID_PARAMETER)
++}
++
++unsafe fn detour_code_from_pointer_once<M: Memory>(
++    src: *const u8,
++) -> Result<Option<*const u8>, u32> {
++    let op0 = unsafe { M::read::<u8>(src)? };
++
++    Ok(match op0 {
+         // jmp rel32
+         0xE9 => {
+-            let rel = unsafe { read_value::<i32>(src.add(1))? } as isize;
+-            Some(unsafe { src.offset(5 + rel) })
++            let rel = unsafe { M::read::<i32>(src.add(1))? } as isize;
++            Some(src.wrapping_offset(5 + rel))
+         }
+         // jmp rel8
+         0xEB => {
+-            let rel = unsafe { read_value::<i8>(src.add(1))? } as isize;
+-            Some(unsafe { src.offset(2 + rel) })
++            let rel = unsafe { M::read::<i8>(src.add(1))? } as isize;
++            Some(src.wrapping_offset(2 + rel))
+         }
+         // jmp r/m
+-        0xFF => unsafe { resolve_ff_jump(src, 0) },
++        0xFF => unsafe { resolve_ff_jump::<M>(src, 0)? },
+         #[cfg(target_arch = "x86_64")]
+         0x48 => {
+-            let op1 = unsafe { read_value::<u8>(src.add(1))? };
+-            let op2 = unsafe { read_value::<u8>(src.add(2))? };
+-
+-            match (op1, op2) {
++            let op1 = unsafe { M::read::<u8>(src.add(1))? };
++            match op1 {
+                 // rex.w jmp qword ptr [rip+disp32]
+-                (0xFF, 0x25) => unsafe { resolve_rip_indirect_jump(src, 3) },
++                0xFF if unsafe { M::read::<u8>(src.add(2))? } == 0x25 => unsafe {
++                    resolve_rip_indirect_jump::<M>(src, 3)?
++                },
+                 // mov rax, imm64; jmp rax
+-                (0xB8, _) if unsafe { read_value::<u16>(src.add(10))? } == 0xE0FF => {
+-                    let target = unsafe { read_value::<u64>(src.add(2))? };
++                0xB8 if unsafe { M::read::<u16>(src.add(10))? } == 0xE0FF => {
++                    let target = unsafe { M::read::<u64>(src.add(2))? };
+                     Some(target as *const u8)
+                 }
+                 _ => None,
+@@ -84,11 +92,11 @@
+         }
+         #[cfg(target_arch = "x86_64")]
+         0x49 => {
+-            let op1 = unsafe { read_value::<u8>(src.add(1))? };
++            let op1 = unsafe { M::read::<u8>(src.add(1))? };
+             // mov r10, imm64; jmp r10
+             // `jmp r10` is 41 FF E2; plain FF E2 would be `jmp rdx`.
+-            if op1 == 0xBA && unsafe { read_value::<[u8; 3]>(src.add(10))? } == [0x41, 0xFF, 0xE2] {
+-                let target = unsafe { read_value::<u64>(src.add(2))? };
++            if op1 == 0xBA && unsafe { M::read::<[u8; 3]>(src.add(10))? } == [0x41, 0xFF, 0xE2] {
++                let target = unsafe { M::read::<u64>(src.add(2))? };
+                 Some(target as *const u8)
+             } else {
+                 None
+@@ -97,8 +105,8 @@
+         #[cfg(target_arch = "x86")]
+         0xB8 => {
+             // mov eax, imm32; jmp eax
+-            if unsafe { read_value::<u16>(src.add(5))? } == 0xE0FF {
+-                let target = unsafe { read_value::<u32>(src.add(1))? };
++            if unsafe { M::read::<u16>(src.add(5))? } == 0xE0FF {
++                let target = unsafe { M::read::<u32>(src.add(1))? };
+                 Some(target as *const u8)
+             } else {
+                 None
+@@ -107,93 +115,49 @@
+         #[cfg(target_arch = "x86")]
+         0x68 => {
+             // push imm32; ret
+-            if unsafe { read_value::<u8>(src.add(5))? } == 0xC3 {
+-                let target = unsafe { read_value::<u32>(src.add(1))? };
++            if unsafe { M::read::<u8>(src.add(5))? } == 0xC3 {
++                let target = unsafe { M::read::<u32>(src.add(1))? };
+                 Some(target as *const u8)
+             } else {
+                 None
+             }
+         }
+         _ => None,
+-    }
+-}
+-
+-unsafe fn resolve_ff_jump(src: *const u8, modrm_offset: usize) -> Option<*const u8> {
+-    let modrm = unsafe { read_value::<u8>(src.add(1 + modrm_offset))? };
++    })
++}
++
++unsafe fn resolve_ff_jump<M: Memory>(
++    src: *const u8,
++    modrm_offset: usize,
++) -> Result<Option<*const u8>, u32> {
++    let modrm = unsafe { M::read::<u8>(src.add(1 + modrm_offset))? };
+     if (modrm & 0b0011_1000) != 0b0010_0000 {
+-        return None;
+-    }
+-
+-    match modrm {
++        return Ok(None);
++    }
++
++    Ok(match modrm {
+         #[cfg(target_arch = "x86_64")]
+-        0x25 => unsafe { resolve_rip_indirect_jump(src, 2 + modrm_offset) },
++        0x25 => unsafe { resolve_rip_indirect_jump::<M>(src, 2 + modrm_offset)? },
+         #[cfg(target_arch = "x86")]
+         0x25 => {
+-            let slot = unsafe { read_value::<u32>(src.add(2 + modrm_offset))? } as *const u8;
+-            let target = unsafe { read_value::<usize>(slot)? };
++            let slot = unsafe { M::read::<u32>(src.add(2 + modrm_offset))? } as *const u8;
++            let target = unsafe { M::read::<usize>(slot)? };
+             Some(target as *const u8)
+         }
+         _ => None,
+-    }
++    })
+ }
+
+ #[cfg(target_arch = "x86_64")]
+-unsafe fn resolve_rip_indirect_jump(src: *const u8, disp_offset: usize) -> Option<*const u8> {
+-    let disp = unsafe { read_value::<i32>(src.add(disp_offset))? } as isize;
++unsafe fn resolve_rip_indirect_jump<M: Memory>(
++    src: *const u8,
++    disp_offset: usize,
++) -> Result<Option<*const u8>, u32> {
++    let disp = unsafe { M::read::<i32>(src.add(disp_offset))? } as isize;
+     let next_instruction = unsafe { src.add(disp_offset + 4) };
+-    let slot = unsafe { next_instruction.offset(disp) };
+-    let target = unsafe { read_value::<usize>(slot)? };
+-    Some(target as *const u8)
+-}
+-
+-unsafe fn read_value<T: Copy>(ptr: *const u8) -> Option<T> {
+-    if !is_readable_range(ptr, std::mem::size_of::<T>()) {
+-        return None;
+-    }
+-
+-    let mut value = std::mem::MaybeUninit::<T>::uninit();
+-    unsafe {
+-        std::ptr::copy_nonoverlapping(
+-            ptr,
+-            value.as_mut_ptr().cast::<u8>(),
+-            std::mem::size_of::<T>(),
+-        );
+-        Some(value.assume_init())
+-    }
+-}
+-
+-fn is_readable_range(ptr: *const u8, len: usize) -> bool {
+-    if ptr.is_null() || len == 0 {
+-        return false;
+-    }
+-
+-    let mut mbi: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+-    let queried = unsafe {
+-        VirtualQuery(
+-            ptr.cast(),
+-            &mut mbi,
+-            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+-        )
+-    };
+-
+-    if queried == 0 || mbi.State != MEM_COMMIT {
+-        return false;
+-    }
+-
+-    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) != 0 {
+-        return false;
+-    }
+-
+-    let start = ptr as usize;
+-    let region_start = mbi.BaseAddress as usize;
+-    let Some(region_end) = region_start.checked_add(mbi.RegionSize) else {
+-        return false;
+-    };
+-    let Some(end) = start.checked_add(len) else {
+-        return false;
+-    };
+-
+-    start >= region_start && end <= region_end
++    let slot = next_instruction.wrapping_offset(disp);
++    let target = unsafe { M::read::<usize>(slot)? };
++    Ok(Some(target as *const u8))
+ }
+
+ #[cfg(test)]
+diff --git a/src/core.rs b/src/core.rs
+new file mode 100644
+--- /dev/null
++++ b/src/core.rs
+@@ -0,0 +1,24 @@
++// Copyright (c) 2026 NeoHook Authors
++// SPDX-License-Identifier: MIT OR Apache-2.0
++#![no_std]
++
++extern crate alloc;
++
++#[cfg(not(all(windows, target_arch = "x86_64")))]
++compile_error!("This NeoHook core requires Windows x64");
++
++mod code;
++pub mod disasm;
++pub mod unwind;
++
++pub use code::resolve;
++
++/// Memory reads must remain valid for the duration of each algorithm call.
++/// Implementations must report unreadable memory without dereferencing it.
++pub unsafe trait Memory {
++    unsafe fn read<T: Copy>(address: *const u8) -> Result<T, u32>;
++    /// Returns readable bytes bounded by the committed region containing `address`.
++    /// Query failures and guarded or unreadable pages return zero; reading a guard
++    /// page would consume the guard and raise STATUS_GUARD_PAGE_VIOLATION.
++    unsafe fn readable_bytes(address: *const u8) -> usize;
++}
+diff --git a/src/disasm.rs b/src/disasm.rs
+--- a/src/disasm.rs
++++ b/src/disasm.rs
+@@ -1,12 +1,27 @@
+ // Copyright (c) 2026 NeoHook Authors
+ // SPDX-License-Identifier: MIT OR Apache-2.0
++use crate::Memory;
++use alloc::vec::Vec;
++use core::marker::PhantomData;
+ use iced_x86::{
+     BlockEncoder, BlockEncoderOptions, Code, Decoder, DecoderOptions, FlowControl, Instruction,
+     InstructionBlock, MemoryOperand, Mnemonic, OpKind, Register,
+ };
+
++#[derive(Debug, Clone, Copy)]
++pub enum RelocationError {
++    UnreadableTarget,
++    PatchTooShort,
++    InvalidInstruction,
++    FunctionTooShort,
++    InvalidBranchTarget,
++    EncodingFailed,
++    UnmappedInstruction,
++    BufferTooSmall,
++}
++
+ #[derive(Debug, Clone)]
+-pub(crate) struct RelocationMapping {
++pub struct RelocationMapping {
+     pub written_len: usize,
+     pub old_instruction_offsets: Vec<u32>,
+     pub new_instruction_offsets: Vec<u32>,
+@@ -16,57 +31,10 @@
+     pub jmp_back_offset: u32,
+ }
+
+-/// Returns how many bytes are readable starting at `address`, bounded by the
+-/// committed memory region that contains it.
+-///
+-/// Returns 0 if the region cannot be queried or is not readable, so callers can
+-/// avoid dereferencing unmapped memory. A `PAGE_GUARD` page also counts as not
+-/// readable: reading it would consume the guard and raise
+-/// `STATUS_GUARD_PAGE_VIOLATION`.
+-///
+-/// # Safety
+-/// `address` only needs to be a value to query; it is never dereferenced here.
+-pub(crate) unsafe fn readable_bytes_from(address: *const u8) -> usize {
+-    use windows_sys::Win32::System::Memory::{
+-        MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
+-        PAGE_EXECUTE_WRITECOPY, PAGE_GUARD, PAGE_NOACCESS, PAGE_READONLY, PAGE_READWRITE,
+-        PAGE_WRITECOPY, VirtualQuery,
+-    };
+-
+-    const READABLE: u32 = PAGE_READONLY
+-        | PAGE_READWRITE
+-        | PAGE_WRITECOPY
+-        | PAGE_EXECUTE_READ
+-        | PAGE_EXECUTE_READWRITE
+-        | PAGE_EXECUTE_WRITECOPY;
+-
+-    let mut mbi: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+-    let written = unsafe {
+-        VirtualQuery(
+-            address as *const _,
+-            &mut mbi,
+-            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+-        )
+-    };
+-    if written == 0 {
+-        return 0;
+-    }
+-
+-    if mbi.State != MEM_COMMIT
+-        || (mbi.Protect & READABLE) == 0
+-        || (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0
+-    {
+-        return 0;
+-    }
+-
+-    let region_end = (mbi.BaseAddress as usize).saturating_add(mbi.RegionSize);
+-    region_end.saturating_sub(address as usize)
+-}
+-
+ /// Provides functionality to disassemble and relocate instructions
+-pub(crate) struct Disassembler;
+-
+-impl Disassembler {
++pub struct Disassembler<M>(PhantomData<M>);
++
++impl<M: Memory> Disassembler<M> {
+     /// Helper function to determine the bitness of the current architecture (32 or 64)
+     fn bitness() -> u32 {
+         #[cfg(target_arch = "x86")]
+@@ -128,7 +96,7 @@
+     pub unsafe fn get_instruction_len(
+         address: *const u8,
+         min_size: usize,
+-    ) -> Result<usize, String> {
++    ) -> Result<usize, RelocationError> {
+         let mut total_bytes = 0;
+
+         // We need enough bytes to reach `min_size` plus at most one full
+@@ -139,18 +107,16 @@
+         // `address`. Without this, a function that sits at the very end of a
+         // mapped page makes `from_raw_parts` span into unmapped memory, and
+         // decoding it triggers an access violation.
+-        let readable = unsafe { readable_bytes_from(address) };
++        let readable = unsafe { M::readable_bytes(address) };
+         if readable == 0 {
+-            return Err("Target address is not in readable committed memory".to_string());
++            return Err(RelocationError::UnreadableTarget);
+         }
+         if readable < min_size {
+-            return Err(
+-                "Not enough readable bytes at target to cover the required patch size".to_string(),
+-            );
++            return Err(RelocationError::PatchTooShort);
+         }
+         read_len = read_len.min(readable);
+
+-        let code_slice = unsafe { std::slice::from_raw_parts(address, read_len) };
++        let code_slice = unsafe { core::slice::from_raw_parts(address, read_len) };
+         let mut decoder = Decoder::with_ip(
+             Self::bitness(),
+             code_slice,
+@@ -173,17 +139,11 @@
+             decoder.decode_out(&mut instruction);
+
+             if instruction.is_invalid() {
+-                return Err(
+-                    "Invalid instruction encountered while calculating instruction length"
+-                        .to_string(),
+-                );
++                return Err(RelocationError::InvalidInstruction);
+             }
+
+             if function_ended && !Self::is_padding(&instruction) {
+-                return Err(
+-                    "Function ends before the required patch size and is not followed by enough padding"
+-                        .to_string(),
+-                );
++                return Err(RelocationError::FunctionTooShort);
+             }
+
+             total_bytes += instruction.len();
+@@ -202,10 +162,7 @@
+             }
+         }
+
+-        Err(
+-            "Error calculating instruction length: not enough instructions to cover min_size"
+-                .to_string(),
+-        )
++        Err(RelocationError::PatchTooShort)
+     }
+
+     /// Whether the code following the `len` bytes at `address`, up to where the
+@@ -221,11 +178,11 @@
+         const WINDOW: usize = 512;
+         let start = address as u64;
+         let end = start + len as u64;
+-        let readable = unsafe { readable_bytes_from(address) };
++        let readable = unsafe { M::readable_bytes(address) };
+         if readable <= len {
+             return false;
+         }
+-        let bytes = unsafe { std::slice::from_raw_parts(address, readable.min(len + WINDOW)) };
++        let bytes = unsafe { core::slice::from_raw_parts(address, readable.min(len + WINDOW)) };
+         let mut decoder = Decoder::with_ip(Self::bitness(), bytes, start, DecoderOptions::NONE);
+
+         // Furthest address a conditional jump decoded so far jumps to; the
+@@ -284,7 +241,7 @@
+         start: u64,
+         end: u64,
+         jmp_code: Code,
+-    ) -> Result<Option<Vec<Instruction>>, String> {
++    ) -> Result<Option<Vec<Instruction>>, RelocationError> {
+         if !matches!(instr.code(), Code::Call_rel32_32 | Code::Call_rel32_64) {
+             return Ok(None);
+         }
+@@ -293,13 +250,11 @@
+             return Ok(None);
+         }
+         if call_target != end && !decoded.iter().any(|i| i.ip() == call_target) {
+-            return Err(
+-                "Relocation failed: call into the middle of a relocated instruction".to_string(),
+-            );
++            return Err(RelocationError::InvalidBranchTarget);
+         }
+
+         let ret_addr = instr.next_ip();
+-        let err = |_| "Relocation failed: cannot emulate call to stolen code".to_string();
++        let err = |_| RelocationError::EncodingFailed;
+         let mut seq = Vec::with_capacity(3);
+         if instr.code() == Code::Call_rel32_32 {
+             seq.push(Instruction::with1(Code::Pushd_imm32, ret_addr as u32).map_err(err)?);
+@@ -343,9 +298,10 @@
+         target: *const u8,
+         trampoline: *mut u8,
+         stolen_len: usize,
+-    ) -> Result<RelocationMapping, String> {
++        capacity: usize,
++    ) -> Result<RelocationMapping, RelocationError> {
+         let bitness = Self::bitness();
+-        let code_slice = unsafe { std::slice::from_raw_parts(target, stolen_len) };
++        let code_slice = unsafe { core::slice::from_raw_parts(target, stolen_len) };
+         let mut decoder =
+             Decoder::with_ip(bitness, code_slice, target as u64, DecoderOptions::NONE);
+
+@@ -355,22 +311,36 @@
+         while decoder.can_decode() {
+             let instr = decoder.decode();
+             if instr.is_invalid() {
+-                return Err("Invalid instruction encountered while relocating".to_string());
+-            }
+-
+-            let old_off = instr.ip().checked_sub(target as u64).ok_or_else(|| {
+-                "Internal relocation error: negative instruction offset".to_string()
+-            })?;
+-
+-            let old_off = u32::try_from(old_off).map_err(|_| {
+-                "Internal relocation error: instruction offset overflow".to_string()
+-            })?;
++                return Err(RelocationError::InvalidInstruction);
++            }
++
++            let old_off = instr
++                .ip()
++                .checked_sub(target as u64)
++                .ok_or_else(|| RelocationError::InvalidBranchTarget)?;
++
++            let old_off =
++                u32::try_from(old_off).map_err(|_| RelocationError::InvalidBranchTarget)?;
+
+             old_instruction_offsets.push(old_off);
+             decoded.push(instr);
+         }
+
+         let return_addr = target as u64 + stolen_len as u64;
++        for instruction in &decoded {
++            if matches!(
++                instruction.op0_kind(),
++                OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64
++            ) {
++                let destination = instruction.near_branch_target();
++                if destination > target as u64
++                    && destination < return_addr
++                    && !decoded.iter().any(|boundary| boundary.ip() == destination)
++                {
++                    return Err(RelocationError::InvalidBranchTarget);
++                }
++            }
++        }
+         let jmp_code = if bitness == 64 {
+             Code::Jmp_rel32_64
+         } else {
+@@ -395,7 +365,7 @@
+         }
+
+         let jmp_back = Instruction::with_branch(jmp_code, return_addr)
+-            .map_err(|_| "Error while creating JMP back".to_string())?;
++            .map_err(|_| RelocationError::EncodingFailed)?;
+         instructions.push(jmp_back);
+
+         let block = InstructionBlock::new(&instructions, trampoline as u64);
+@@ -404,12 +374,10 @@
+             block,
+             BlockEncoderOptions::RETURN_NEW_INSTRUCTION_OFFSETS,
+         )
+-        .map_err(|e| format!("Relocation failed: {}", e))?;
++        .map_err(|_| RelocationError::EncodingFailed)?;
+
+         if result.new_instruction_offsets.len() < instructions.len() {
+-            return Err(
+-                "Relocation failed: encoder returned incomplete instruction offsets".to_string(),
+-            );
++            return Err(RelocationError::UnmappedInstruction);
+         }
+
+         let new_instruction_offsets: Vec<u32> = block_index
+@@ -425,14 +393,14 @@
+         // hook fails cleanly (RelocationFailed) instead of installing a corrupt
+         // trampoline. (Found by the relocator fuzzer.)
+         if new_instruction_offsets.contains(&u32::MAX) {
+-            return Err(
+-                "Relocation failed: an instruction could not be re-encoded (short-only branch out of range)"
+-                    .to_string(),
+-            );
+-        }
+-
++            return Err(RelocationError::UnmappedInstruction);
++        }
++
++        if result.code_buffer.len() > capacity {
++            return Err(RelocationError::BufferTooSmall);
++        }
+         unsafe {
+-            std::ptr::copy_nonoverlapping(
++            core::ptr::copy_nonoverlapping(
+                 result.code_buffer.as_ptr(),
+                 trampoline,
+                 result.code_buffer.len(),
+diff --git a/src/unwind.rs b/src/unwind.rs
+--- a/src/unwind.rs
++++ b/src/unwind.rs
+@@ -1,89 +1,17 @@
+ // Copyright (c) 2026 NeoHook Authors
+ // SPDX-License-Identifier: MIT OR Apache-2.0
+
+-//! x64 unwind data for neohook's executable stubs.
+-//!
+-//! x64 Windows unwinds a stack - for an exception, a debugger's call stack,
+-//! `RtlCaptureStackBackTrace`, a profiler - through table-based unwind data:
+-//! every frame's instruction pointer must lie in a function with a
+-//! `RUNTIME_FUNCTION` entry describing what its prologue did to the stack. A
+-//! trampoline or gateway runs a relocated copy of the target's prologue in
+-//! memory neohook allocated, which has no such entry. While a call made by
+-//! those stolen instructions is running, its return address points into the
+-//! stub; the unwinder then treats the stub as a leaf, reads the wrong return
+-//! address and the walk ends there - or an exception cannot be dispatched past
+-//! it.
+-//!
+-//! Each stub therefore gets an entry derived from the target's own unwind
+-//! data. The prologue's unwind codes are kept for the instructions the stub
+-//! runs, with their offsets translated through the relocation map, since a
+-//! relocated instruction can change length. Codes for prologue instructions
+-//! the stub does not run (they execute in the original body after the jump
+-//! back) are dropped. The entry and its unwind info live in a reserved area at
+-//! the end of the stub's allocation and are registered with
+-//! `RtlAddFunctionTable`; [`crate::reclaim`] deletes the table before the
+-//! allocation is released.
+-//!
+-//! x86 unwinds through frame-pointer chains and exception registration
+-//! records, not tables, so there everything here is a no-op.
+-
+-/// Bytes reserved at the end of a stub allocation for its unwind data.
+-#[cfg(target_arch = "x86_64")]
+-pub(crate) const UNWIND_AREA: usize = 128;
+-#[cfg(target_arch = "x86")]
+-pub(crate) const UNWIND_AREA: usize = 0;
+-
+-#[cfg(target_arch = "x86_64")]
+-pub(crate) use imp::*;
+-
+-#[cfg(target_arch = "x86")]
+-mod imp_x86 {
++//! x64 unwind-code translation for relocated prologues.
++
++pub use imp::*;
++
++mod imp {
+     use crate::disasm::RelocationMapping;
+-
+-    /// No table-based unwinding on x86.
+-    pub(crate) unsafe fn register_relocated(
+-        _target: *const u8,
+-        _region: *mut u8,
+-        _area_offset: usize,
+-        _code_offset: usize,
+-        _mapping: &RelocationMapping,
+-        _stolen_len: usize,
+-    ) {
+-    }
+-
+-    /// No table-based unwinding on x86.
+-    pub(crate) unsafe fn register_codes(
+-        _region: *mut u8,
+-        _area_offset: usize,
+-        _begin: usize,
+-        _end: usize,
+-        _prolog_size: u8,
+-        _frame: u8,
+-        _slots: &[u16],
+-    ) {
+-    }
+-
+-    pub(crate) fn suspend(_bases: &[usize]) {}
+-
+-    pub(crate) fn settle(_bases: &[usize], _still_busy: &[usize]) {}
+-}
+-
+-#[cfg(target_arch = "x86")]
+-pub(crate) use imp_x86::*;
+-
+-#[cfg(target_arch = "x86_64")]
+-mod imp {
+-    use std::collections::HashMap;
+-    use std::sync::Mutex;
+-
+-    use windows_sys::Win32::System::Diagnostics::Debug::{
+-        IMAGE_RUNTIME_FUNCTION_ENTRY, RtlAddFunctionTable, RtlDeleteFunctionTable,
+-        RtlLookupFunctionEntry,
+-    };
+-
+-    use super::UNWIND_AREA;
+-    use crate::disasm::RelocationMapping;
+-
++    use alloc::vec::Vec;
++    use windows_sys::Win32::Foundation::{ERROR_NOT_ENOUGH_MEMORY, ERROR_NOT_SUPPORTED};
++
++    const UNW_FLAG_EHANDLER: u8 = 0x1;
++    const UNW_FLAG_UHANDLER: u8 = 0x2;
+     const UNW_FLAG_CHAININFO: u8 = 0x4;
+
+     const UWOP_PUSH_NONVOL: u8 = 0;
+@@ -100,156 +28,47 @@
+     const UWOP_SAVE_XMM128_FAR: u8 = 9;
+     const UWOP_PUSH_MACHFRAME: u8 = 10;
+
+-    /// A stub's table entry and whether it is currently registered.
+-    struct Table {
+-        entry: usize,
+-        registered: bool,
++    /// Unwind codes translated for a stub.
++    pub struct Translated {
++        pub slots: Vec<u16>,
++        pub prolog_size: u8,
++        /// `FrameRegister | FrameOffset << 4`.
++        pub frame: u8,
+     }
+
+-    /// Registered stub tables by allocation base.
+-    static TABLES: Mutex<Option<HashMap<usize, Table>>> = Mutex::new(None);
+-
+-    fn with_tables<R>(f: impl FnOnce(&mut HashMap<usize, Table>) -> R) -> R {
+-        let mut guard = TABLES.lock().unwrap_or_else(|p| p.into_inner());
+-        f(guard.get_or_insert_with(HashMap::new))
+-    }
+-
+-    /// Writes and registers the unwind data of a stub holding the relocated
+-    /// prologue of `target`.
+-    ///
+-    /// `region` is the stub allocation; the relocated code starts at
+-    /// `region + code_offset` and was produced by `mapping` from `stolen_len`
+-    /// bytes at `target`. The unwind data is written at `region + area_offset`,
+-    /// where [`UNWIND_AREA`] bytes must be writable. Nothing is registered if
+-    /// the target has no unwind data, or data this cannot translate (a chained
+-    /// entry, more codes than fit).
++    /// Translates source unwind codes to the stub described by `mapping`.
++    /// `delta` is the target's byte offset within the original function.
+     ///
+     /// # Safety
+-    ///
+-    /// `region` must be a live stub allocation, writable for
+-    /// `area_offset + UNWIND_AREA` bytes, and `target` the code `mapping` was
+-    /// built from.
+-    pub(crate) unsafe fn register_relocated(
+-        target: *const u8,
+-        region: *mut u8,
+-        area_offset: usize,
+-        code_offset: usize,
++    /// `info` must point to resident unwind metadata for that original function.
++    pub unsafe fn translate(
++        info: *const u8,
++        delta: u64,
+         mapping: &RelocationMapping,
+         stolen_len: usize,
+-    ) {
+-        let Some(codes) = (unsafe { translate(target, mapping, stolen_len) }) else {
+-            return;
+-        };
+-        unsafe {
+-            register_codes(
+-                region,
+-                area_offset,
+-                code_offset,
+-                code_offset + mapping.written_len,
+-                codes.prolog_size,
+-                codes.frame,
+-                &codes.slots,
+-            )
+-        };
+-    }
+-
+-    /// Writes unwind data for the code at `[region + begin, region + end)` -
+-    /// `slots` in the unwinder's order, the prologue size and the frame
+-    /// register byte - at `region + area_offset` and registers it.
+-    ///
+-    /// # Safety
+-    ///
+-    /// `region` must be a live stub allocation, writable for
+-    /// `area_offset + UNWIND_AREA` bytes.
+-    pub(crate) unsafe fn register_codes(
+-        region: *mut u8,
+-        area_offset: usize,
+-        begin: usize,
+-        end: usize,
+-        prolog_size: u8,
+-        frame: u8,
+-        slots: &[u16],
+-    ) {
+-        let info_offset = area_offset + std::mem::size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>();
+-        let info_len = 4 + slots.len().next_multiple_of(2) * 2;
+-        if info_offset - area_offset + info_len > UNWIND_AREA || slots.len() > u8::MAX as usize {
+-            return;
+-        }
+-
+-        unsafe {
+-            let info = region.add(info_offset);
+-            // Version 1, no flags: handlers and epilogue descriptions belong to
+-            // the original function, not to the stub.
+-            info.write(1);
+-            info.add(1).write(prolog_size);
+-            info.add(2).write(slots.len() as u8);
+-            info.add(3).write(frame);
+-            let out = info.add(4) as *mut u16;
+-            for (i, slot) in slots.iter().enumerate() {
+-                out.add(i).write_unaligned(*slot);
+-            }
+-            if slots.len() % 2 == 1 {
+-                out.add(slots.len()).write_unaligned(0);
+-            }
+-
+-            let entry = region.add(area_offset) as *mut IMAGE_RUNTIME_FUNCTION_ENTRY;
+-            entry.write(std::mem::zeroed());
+-            (*entry).BeginAddress = begin as u32;
+-            (*entry).EndAddress = end as u32;
+-            (*entry).Anonymous.UnwindData = info_offset as u32;
+-
+-            if RtlAddFunctionTable(entry, 1, region as u64) {
+-                with_tables(|tables| {
+-                    tables.insert(
+-                        region as usize,
+-                        Table {
+-                            entry: entry as usize,
+-                            registered: true,
+-                        },
+-                    )
+-                });
+-            }
+-        }
+-    }
+-
+-    /// Unwind codes translated for a stub.
+-    struct Translated {
+-        slots: Vec<u16>,
+-        prolog_size: u8,
+-        /// `FrameRegister | FrameOffset << 4`.
+-        frame: u8,
+-    }
+-
+-    /// Translates the unwind codes of the function containing `target` to the
+-    /// stub `mapping` describes.
+-    unsafe fn translate(
+-        target: *const u8,
+-        mapping: &RelocationMapping,
+-        stolen_len: usize,
+-    ) -> Option<Translated> {
+-        let mut image_base = 0u64;
+-        let function =
+-            unsafe { RtlLookupFunctionEntry(target as u64, &mut image_base, std::ptr::null_mut()) };
+-        if function.is_null() {
+-            // A leaf function: no frame, nothing to describe.
+-            return None;
+-        }
+-        let function = unsafe { &*function };
+-        let info = (image_base + unsafe { function.Anonymous.UnwindData } as u64) as *const u8;
+-        let header = unsafe { std::slice::from_raw_parts(info, 4) };
++    ) -> Result<Translated, u32> {
++        let header = unsafe { core::slice::from_raw_parts(info, 4) };
+         let version = header[0] & 0x7;
+         let flags = header[0] >> 3;
++        // TODO: Translate chained unwind records before accepting those prologues.
+         if flags & UNW_FLAG_CHAININFO != 0 || !(1..=2).contains(&version) {
+-            return None;
++            return Err(ERROR_NOT_SUPPORTED);
++        }
++        // TODO: Translate language-handler scope/IP metadata before relocating
++        // handler-protected body instructions; an unchanged handler RVA is insufficient.
++        if flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER) != 0
++            && delta + stolen_len as u64 > u64::from(header[1])
++        {
++            return Err(ERROR_NOT_SUPPORTED);
+         }
+         let count = header[2] as usize;
+         let mut frame = header[3];
+-        let source = unsafe { std::slice::from_raw_parts(info.add(4) as *const u16, count) };
+-
+-        // Where the stub starts within its function.
+-        let delta = (target as u64).checked_sub(image_base + function.BeginAddress as u64)?;
++        let source = unsafe { core::slice::from_raw_parts(info.add(4) as *const u16, count) };
+
+         let mut slots = Vec::new();
++        slots
++            .try_reserve(count)
++            .map_err(|_| ERROR_NOT_ENOUGH_MEMORY)?;
+         let mut prolog_size = 0u8;
+         let mut i = 0;
+         while i < count {
+@@ -267,10 +86,10 @@
+                 UWOP_EPILOG_OR_SAVE_XMM => 2,
+                 UWOP_SPARE_OR_SAVE_XMM_FAR if version == 2 => 2,
+                 UWOP_SPARE_OR_SAVE_XMM_FAR => 3,
+-                _ => return None,
++                _ => return Err(ERROR_NOT_SUPPORTED),
+             };
+             if i + len > count {
+-                return None;
++                return Err(ERROR_NOT_SUPPORTED);
+             }
+             // Epilogue descriptions do not apply to the stub.
+             if version == 2 && matches!(op, UWOP_EPILOG_OR_SAVE_XMM | UWOP_SPARE_OR_SAVE_XMM_FAR) {
+@@ -292,13 +111,14 @@
+                     let index = mapping
+                         .old_instruction_offsets
+                         .iter()
+-                        .position(|&o| o == relative)?;
++                        .position(|&o| o == relative)
++                        .ok_or(ERROR_NOT_SUPPORTED)?;
+                     Some(mapping.new_instruction_offsets[index])
+                 }
+             };
+             match new_offset {
+                 Some(new_offset) => {
+-                    let new_offset = u8::try_from(new_offset).ok()?;
++                    let new_offset = u8::try_from(new_offset).map_err(|_| ERROR_NOT_SUPPORTED)?;
+                     prolog_size = prolog_size.max(new_offset);
+                     slots.push((code & 0xFF00) | new_offset as u16);
+                     slots.extend_from_slice(&source[i + 1..i + len]);
+@@ -312,53 +132,11 @@
+             i += len;
+         }
+
+-        Some(Translated {
++        Ok(Translated {
+             slots,
+             prolog_size,
+             frame,
+         })
+-    }
+-
+-    /// Deletes the tables of the stub allocations at `bases` before they may be
+-    /// released. Runs before any thread is suspended: the function table lock
+-    /// could be held by a frozen thread.
+-    pub(crate) fn suspend(bases: &[usize]) {
+-        with_tables(|tables| {
+-            for base in bases {
+-                if let Some(table) = tables.get_mut(base)
+-                    && table.registered
+-                {
+-                    unsafe {
+-                        RtlDeleteFunctionTable(table.entry as *const IMAGE_RUNTIME_FUNCTION_ENTRY)
+-                    };
+-                    table.registered = false;
+-                }
+-            }
+-        });
+-    }
+-
+-    /// After a release pass: forgets the tables of the allocations that were
+-    /// released and registers the others (`still_busy`) again.
+-    pub(crate) fn settle(bases: &[usize], still_busy: &[usize]) {
+-        with_tables(|tables| {
+-            for base in bases {
+-                if still_busy.contains(base) {
+-                    if let Some(table) = tables.get_mut(base)
+-                        && !table.registered
+-                    {
+-                        table.registered = unsafe {
+-                            RtlAddFunctionTable(
+-                                table.entry as *const IMAGE_RUNTIME_FUNCTION_ENTRY,
+-                                1,
+-                                *base as u64,
+-                            )
+-                        };
+-                    }
+-                } else {
+-                    tables.remove(base);
+-                }
+-            }
+-        });
+     }
+
+     #[cfg(test)]

@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2023-2025 LiteLoaderQQNT
+// SPDX-FileCopyrightText: 2026 movblock
+// SPDX-License-Identifier: LGPL-3.0-or-later
+
+import { PhantomLoader } from "../api.js";
 import default_config from "../../common/static/config.json" with {type: "json"};
 
 
@@ -5,6 +10,7 @@ export function initView(view, html) {
     view.innerHTML = html;
     initVersions(view);
     initPluginList(view);
+    initCapture(view);
     initPath(view);
     initAbout(view);
 }
@@ -18,35 +24,37 @@ export async function appropriateIcon(icon) {
 async function initVersions(view) {
     if (globalThis.qwqnt) view.querySelector(".versions .qwqnt").style.display = "block";
 
-    view.querySelector(".versions .liteloader .version").textContent = LiteLoader.versions.liteloader;
-    view.querySelector(".versions .qqnt .version").textContent = LiteLoader.versions.qqnt;
-    view.querySelector(".versions .electron .version").textContent = LiteLoader.versions.electron;
-    view.querySelector(".versions .chromium .version").textContent = LiteLoader.versions.chrome;
-    view.querySelector(".versions .nodejs .version").textContent = LiteLoader.versions.node;
+    view.querySelector(".versions .liteloader .version").textContent = PhantomLoader.versions.phantomloader;
+    view.querySelector(".versions .compatibility .version").textContent = PhantomLoader.versions.liteloader;
+    view.querySelector(".versions .qqnt .version").textContent = PhantomLoader.versions.qqnt;
+    view.querySelector(".versions .electron .version").textContent = PhantomLoader.versions.electron;
+    view.querySelector(".versions .chromium .version").textContent = PhantomLoader.versions.chrome;
+    view.querySelector(".versions .nodejs .version").textContent = PhantomLoader.versions.node;
 
     const title = view.querySelector(".versions .new setting-text");
     const update_btn = view.querySelector(".versions .new setting-button");
 
-    const jump_link = () => LiteLoader.api.openExternal(update_btn.value);
+    const jump_link = () => PhantomLoader.api.openExternal(update_btn.value);
     const try_again = () => {
-        title.textContent = "正在瞅一眼 LiteLoaderQQNT 是否有新版本";
+        title.textContent = "正在瞅一眼 PhantomLoaderQQNT 是否有新版本";
         update_btn.textContent = "你先别急";
         update_btn.value = null;
         update_btn.removeEventListener("click", jump_link);
         update_btn.removeEventListener("click", try_again);
-        const repo_url = LiteLoader.package.liteloader.repository.url;
+        const repo_url = PhantomLoader.package.phantomloader.repository.url;
         const release_latest_url = `${repo_url.slice(0, repo_url.lastIndexOf(".git"))}/releases/latest`;
         fetch(release_latest_url).then((res) => {
-            const new_version = res.url.slice(res.url.lastIndexOf("/") + 1);
-            if (LiteLoader.versions.liteloader != new_version) {
-                title.textContent = `发现 LiteLoaderQQNT 新版本 ${new_version}`;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const new_version = res.url.slice(res.url.lastIndexOf("/") + 1).replace(/^v/, "");
+            if (PhantomLoader.versions.phantomloader != new_version) {
+                title.textContent = `发现 PhantomLoaderQQNT 新版本 ${new_version}`;
                 update_btn.textContent = "去瞅一眼";
                 update_btn.value = res.url;
                 update_btn.removeEventListener("click", try_again);
                 update_btn.addEventListener("click", jump_link);
             }
             else {
-                title.textContent = "暂未发现 LiteLoaderQQNT 有新版本，目前已是最新";
+                title.textContent = "暂未发现 PhantomLoaderQQNT 有新版本，目前已是最新";
                 update_btn.textContent = "重新发现";
                 update_btn.value = null;
                 update_btn.removeEventListener("click", jump_link);
@@ -61,6 +69,22 @@ async function initVersions(view) {
         });
     };
     try_again();
+}
+
+
+async function initCapture(view) {
+    const control = view.querySelector(".capture setting-switch");
+    const config = await PhantomLoader.api.config.get("PhantomLoader", default_config);
+    control.setActive(config.enable_dlvm_capture !== false);
+    control.addEventListener("click", async () => {
+        const enabled = !control.getActive();
+        const current = await PhantomLoader.api.config.get("PhantomLoader", default_config);
+        if (await PhantomLoader.api.config.set("PhantomLoader", { ...current, enable_dlvm_capture: enabled })) {
+            control.setActive(enabled);
+        } else {
+            alert("无法保存捕获设置，请检查数据目录的写入权限");
+        }
+    });
 }
 
 
@@ -79,19 +103,20 @@ async function initPluginList(view) {
     input_file.accept = ".zip,.json";
     input_file.addEventListener("change", async () => {
         const filepath = input_file.files?.[0]?.path;
-        const is_install = await LiteLoader.api.plugin.install(filepath);
+        const is_install = await PhantomLoader.api.plugin.install(filepath);
         alert(is_install ? "插件安装成功" : "无法安装无效插件");
         input_file.value = null;
     });
     plugin_install_button.addEventListener("click", () => input_file.click());
 
-    const config = await LiteLoader.api.config.get("LiteLoader", default_config);
+    const config = await PhantomLoader.api.config.get("PhantomLoader", default_config);
     plugin_loader_switch.setActive(config.enable_plugins);
     plugin_loader_switch.addEventListener("click", () => {
         const isActive = plugin_loader_switch.getActive();
         plugin_loader_switch.setActive(!isActive);
         config.enable_plugins = !isActive;
-        LiteLoader.api.config.set("LiteLoader", config);
+        PhantomLoader.api.config.get("PhantomLoader", default_config).then(current =>
+            PhantomLoader.api.config.set("PhantomLoader", { ...current, enable_plugins: config.enable_plugins }));
     });
 
     const plugin_counts = {
@@ -101,7 +126,7 @@ async function initPluginList(view) {
     }
 
     const default_icon = `local://root/src/common/static/default.png`;
-    for (const [slug, plugin] of Object.entries(LiteLoader.plugins)) {
+    for (const [slug, plugin] of Object.entries(PhantomLoader.plugins)) {
         if (plugin.incompatible) continue;
 
         const plugin_icon = `local:///${plugin.path.plugin}/${plugin.manifest?.icon}`;
@@ -160,7 +185,7 @@ async function initPluginList(view) {
             const isActive = manager_modal_switch.getActive();
             manager_modal_switch.setActive(!isActive);
             plugin_item.classList.toggle("disabled", !isActive);
-            LiteLoader.api.plugin.disable(slug, !isActive);
+            PhantomLoader.api.plugin.disable(slug, !isActive);
         });
         plugin_item.classList.toggle("disabled", !manager_modal_switch.getActive());
 
@@ -169,7 +194,7 @@ async function initPluginList(view) {
             const isActive = manager_modal_data.getActive();
             manager_modal_data.setActive(!isActive);
             plugin_item.classList.toggle("deleted", !isActive);
-            LiteLoader.api.plugin.delete(slug, [manager_modal_self.getActive(), !isActive], false);
+            PhantomLoader.api.plugin.delete(slug, [manager_modal_self.getActive(), !isActive], false);
         });
         plugin_item.classList.toggle("deleted", manager_modal_data.getActive());
 
@@ -178,7 +203,7 @@ async function initPluginList(view) {
             const isActive = manager_modal_self.getActive();
             manager_modal_self.setActive(!isActive);
             plugin_item.classList.toggle("deleted", !isActive);
-            LiteLoader.api.plugin.delete(slug, [!isActive, manager_modal_data.getActive()], false);
+            PhantomLoader.api.plugin.delete(slug, [!isActive, manager_modal_data.getActive()], false);
         });
         plugin_item.classList.toggle("deleted", manager_modal_self.getActive());
 
@@ -195,8 +220,8 @@ async function initPluginList(view) {
 
 
 async function initPath(view) {
-    view.querySelector(".path .root").setValue(LiteLoader.path.root);
-    view.querySelector(".path .profile").setValue(LiteLoader.path.profile);
+    view.querySelector(".path .root").setValue(PhantomLoader.path.root);
+    view.querySelector(".path .profile").setValue(PhantomLoader.path.profile);
 }
 
 
