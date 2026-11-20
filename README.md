@@ -10,19 +10,18 @@
 
 一个基于 LiteLoaderQQNT 的 QQNT 插件平台。
 
-**版本 1.0.0 · LiteLoader API 兼容版本 5.2.1 · Windows 11 x64 · QQNT 9.9.37-54395**
+**版本 1.1.0 · LiteLoader API 兼容版本 5.2.1 · Windows 11 x64 · QQNT 9.9.37-54395**
 
 ## 安装与启动
 
-从 [Releases](https://github.com/mlbv/PhantomLoaderQQNT/releases) 下载完整的 Windows x64 离线发行包，核对 SHA-256 后解压到 QQ 安装目录以外的新目录。
+从 [Releases](https://github.com/mlbv/PhantomLoaderQQNT/releases) 下载完整的 Windows x64 离线发行包，按[发行包校验说明](docs/releases.md)核对签名、SHA-256 和构建来源，再解压到 QQ 安装目录和插件数据目录之外的新目录。
 
 1. 关闭 QQ。
-2. 运行 `Install.cmd`，或在 PowerShell 中执行 `.\Install.ps1`。写入 Program Files 下的 QQ 安装通常需要管理员权限。
-3. 使用桌面上的 **QQNT (PhantomLoader)** 快捷方式启动。
+2. 在解压目录中运行 `.\Install.ps1 -CheckOnly`，确认本机的 QQ 安装符合该发行包的兼容性要求。
+3. 运行 `Install.cmd`，或在 PowerShell 中执行 `.\Install.ps1`。写入 Program Files 下的 QQ 安装通常需要管理员权限。
+4. 使用桌面上的 **QQNT (PhantomLoader)** 快捷方式启动。
 
-默认运行目录为 QQ 安装目录下的 `PhantomLoaderQQNT`，插件和数据位于 `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`。支持通过安装参数指定其他位置。卸载时运行发行包或已安装目录中的 `Uninstall.cmd`；插件与数据保留。
-
-完整参数、校验与卸载说明见 [Windows distribution](docs/distribution.md)。发行包由 GitHub Actions 从 PGP 签名的标签与提交构建，同时提供匹配源码、SHA-256 和构建来源证明；校验步骤见 [Release verification](docs/releases.md)。
+当前源码中的兼容性配置以腾讯 QQNT 9.9.37-54395 完整安装版为准。QQ 热更新可能保留旧版启动程序和基础版本，因此即使显示相同的 QQ 版本，不同安装也可能得到不同的校验结果。自定义路径、兼容性要求和卸载步骤见 [Windows distribution](docs/distribution.md)。
 
 ## 插件与兼容性
 
@@ -32,7 +31,7 @@
 
 ~~~js
 exports.onLoad = (PhantomLoader) => {
-    PhantomLoader.versions.phantomloader; // "1.0.0"
+    PhantomLoader.versions.phantomloader; // "1.1.0"
     PhantomLoader.api.intercept.register("my-plugin", "external", handler);
 };
 ~~~

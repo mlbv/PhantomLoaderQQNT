@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "neohook-embed"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "iced-x86",
  "neohook",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "phantomloader"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "phantomloader-platform",
  "serde",
@@ -120,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "phantomloader-payload"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "neohook-embed",
  "phantomloader-platform",
@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "phantomloader-platform"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde_json",
  "sha2",

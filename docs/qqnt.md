@@ -7,7 +7,7 @@ The telemetry and security findings below were established on Windows x64 QQNT 9
 
 The current [compatibility profile](../distribution/profile.json) targets QQNT 9.9.37-54395, whose bounded incremental review is described below. The telemetry routes and earlier security findings retain their original build scope unless that review explicitly confirms the corresponding newer path.
 
-PhantomLoaderQQNT 1.0.0 provides LiteLoader compatibility version 5.2.1, and each plugin selects its facade in the manifest before receiving it through `onLoad(api)`. Both facades share plugin state and storage; the native binding is `phantomloader_native`, with `liteloader_native` retained as an alias. The compatibility profile identifies the verifier and loader-hook targets for this module set, while core configuration remains in `data/LiteLoader/config.json`; the `local://` resource scheme and synchronous preload transport remain available to both API facades.
+PhantomLoaderQQNT 1.1.0 provides LiteLoader compatibility version 5.2.1, and each plugin selects its facade in the manifest before receiving it through `onLoad(api)`. Both facades share plugin state and storage; the native binding is `phantomloader_native`, with `liteloader_native` retained as an alias. The compatibility profile identifies the verifier and loader-hook targets for this module set, while core configuration remains in `data/LiteLoader/config.json`; the `local://` resource scheme and synchronous preload transport remain available to both API facades.
 
 ## QQNT 9.9.37-54395 update review
 
@@ -19,7 +19,7 @@ The handle collector also adds Thread objects and replaces inline name checks wi
 
 Selected inspection-API callers in `QQNT.dll` instead perform Node diagnostic reporting, Chromium resident-memory accounting, profiler stack-range setup and V8/Crashpad exception handling. The embedded cache inventory also grows from 1,005 to 1,057 entries, although extensive numeric-key renumbering prevents interpreting that difference as 52 identified new logical modules. Three selected newer caches were deserialized for bytecode inspection, recovering local-gateway secret persistence and game-center webview authentication rather than a loader-detection predicate in those functions.
 
-The current runtime applies exact-build patches to the signing-stack, code-integrity and handle-inspection routes before normal wrapper initialization. These preserve the original signing continuation, the checksum collector's existing disabled result and a valid empty handle result; unrelated environment collection remains. Their coverage is limited to the selected paths.
+The current runtime applies exact-build patches to the signing-stack, code-integrity, handle-inspection and environment-collection routes before normal wrapper initialization. These preserve the original signing continuation and the checksum collector's existing disabled result, return a valid empty handle result, and force the environment collector's empty branch so the environment record is not constructed; the patches cover only the selected paths.
 
 This review establishes specific mechanisms and changes within the inspected code, while unexamined native and cached functions, indirect activation and server-supplied programs remain coverage gaps. Functional compatibility and successful launches therefore remain separate from resistance to the [inspection methods observable to QQNT](../native/README.md#inspection-limits).
 

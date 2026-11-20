@@ -78,7 +78,7 @@ From there, [src/main.js](../src/main.js) installs Electron transport and preloa
 
 ## Build-specific inspection patches
 
-The compatibility profile selects three wrapper routes: signing-stack classification, disk-versus-memory code comparison, and handle/name inspection. Their patches retain the existing signing continuation, use the checksum collector's disabled path, and construct a valid empty handle result. Other environment collection and authentication work remain in place.
+The compatibility profile selects four wrapper routes: signing-stack classification, disk-versus-memory code comparison, handle/name inspection, and environment collection. Their patches retain the existing signing continuation, use the checksum collector's disabled path, construct a valid empty handle result, and force the environment collector's empty branch. Other environment-sensitive collection, such as the fixed virtualization-marker provider, and authentication work remain in place.
 
 [protection.rs](crates/payload/src/protection.rs) installs observers for `NtMapViewOfSection` and `NtMapViewOfSectionEx` during payload bootstrap, independently of the capture setting. It validates the complete patch set before writing to a newly mapped matching executable image and terminates on a guard or write failure. Non-executable image views used for file inspection retain their original bytes and protections. Observing the mapping return provides an earlier boundary than `LdrLoadDll` return, while avoiding external-module calls from a DLL notification callback.
 
@@ -111,7 +111,7 @@ Manual mapping provides a narrow concealment property: the payload and generated
 | PEB and loader-state inspection | Process and loader bookkeeping beyond the absence of a payload module entry. |
 | IPC and handle inspection | The launcher coordinator, its communication channel, events, threads and handles. |
 
-These are documented limits of the current modding platform, independently of whether a particular QQNT build actually uses each method to detect modifications. The build-specific patches cover the three profiled wrapper routes described above. The capture guard covers its profiled DLVM receipt and execution paths, while telemetry controls address their own reporting routes. Other implementations of these inspection methods remain outside that coverage.
+These are documented limits of the current modding platform, independently of whether a particular QQNT build actually uses each method to detect modifications. The build-specific patches cover the four profiled wrapper routes described above. The capture guard covers its profiled DLVM receipt and execution paths, while telemetry controls address their own reporting routes. Other implementations of these inspection methods remain outside that coverage.
 
 Every QQNT update requires binary re-analysis because a new build can add user-mode anti-cheat or change the activation of an existing inspection path. Preserved binaries and analysis databases support incremental comparison, but relocated hook sites, matching prologues and successful launches establish functional compatibility without resolving those detection questions.
 

@@ -3,7 +3,7 @@
 
 # PhantomLoaderQQNT offline installer
 
-This bundle installs PhantomLoaderQQNT 1.0.0 with LiteLoader API compatibility 5.2.1 and native API version 1 for QQNT 9.9.37-54395 on Windows x64. It includes the loader, injector, payload, default DLVM capture and local capture reporter, and supports Windows PowerShell 5.1 and later.
+This bundle installs PhantomLoaderQQNT 1.1.0 with LiteLoader API compatibility 5.2.1 and native API version 1 for QQNT 9.9.37-54395 on Windows x64. It includes the loader, injector, payload, default DLVM capture and local capture reporter, and supports Windows PowerShell 5.1 and later.
 
 Before installation, follow the [release verification guide](https://github.com/mlbv/PhantomLoaderQQNT/blob/main/docs/releases.md) to verify the signed source tag, archive hash and GitHub build attestation.
 
@@ -35,9 +35,9 @@ The default runtime directory is `PhantomLoaderQQNT` beneath the QQ root, and th
 
 Installation verifies the version selector and exact file fingerprints in `profile.json`, saves the original package bytes as `original-package.bin`, creates the bootstrap and updates `package.json`. It also creates the **QQNT (PhantomLoader)** desktop shortcut, which starts QQ through the bundled injector; launch then validates the installation and starts the supported executable with its native payload.
 
-The payload also applies the exact-build wrapper inspection patches before normal wrapper initialization. These patches are mandatory and independent of the DLVM capture setting; they cover the selected signing-stack, code-integrity and handle-inspection routes, without establishing general undetectability.
+The payload also applies the exact-build wrapper inspection patches before normal wrapper initialization. These patches are mandatory and independent of the DLVM capture setting; they cover the selected signing-stack, code-integrity, handle-inspection and environment-collection routes, without establishing general undetectability.
 
-After a QQNT hot update, `curVersion` can advance while `baseVersion` and `buildId` retain the original installation’s values. Installation and launch accept only the base/build pairs listed in the profile, while checking the active package version and all supported file fingerprints independently.
+This bundle requires the selector and root `QQ.exe` from the full Tencent QQNT 9.9.37-54395 installer. A hot update can advance `curVersion` while retaining the earlier `baseVersion`, `buildId` and root executable, so use `Install.ps1 -CheckOnly` to validate the installation against the bundled profile.
 
 ~~~powershell
 # From the installed runtime directory

@@ -3,22 +3,26 @@
 
 # Windows distribution
 
-The offline bundle targets Windows 11 x64 and records its QQNT build, PhantomLoaderQQNT release and LiteLoader API compatibility in the compatibility profile and bundled inventory. It includes the loader, injector, native API payload, default core DLVM capture and local incident reporter, while installation and launch verify the active QQ version, update selector and exact sizes and SHA-256 fingerprints of the supported files.
+The offline bundle targets Windows 11 x64 and supports Windows PowerShell 5.1 and PowerShell 7. It contains the loader, launcher, native payload and local incident reporter.
 
-QQNT hot updates can retain the original installation’s `baseVersion` and `buildId` while advancing `curVersion`, so the profile records supported base/build pairs separately from the active package version. Both validators require an exact listed pair and the supported current version, in addition to the file fingerprints; they do not modify QQNT’s selector.
+## QQNT compatibility
+
+The `profile.json` in each bundle specifies the supported `curVersion`, accepted `baseVersion` and `buildId` pairs, and the size and SHA-256 of each pinned file. The installer and launcher compare those values with the local installation and reject a pending update to another version.
+
+A hot update can advance `curVersion` while retaining the original base selector and root `QQ.exe`, so two installations displaying the same QQNT version can yield different validation results. The [profile in this source tree](../distribution/profile.json) requires the selector and root executable from the full Tencent QQNT 9.9.37-54395 installer. For a downloaded release, run `Install.ps1 -CheckOnly` to check the local installation against that release's bundled profile.
 
 ## Installing a release
 
-Extract the complete archive into a directory separate from both the QQ installation and the plugin profile, close QQ, and run `Install.cmd` with permission to write the installation. To inspect the installation without changing it, use the check-only form:
+[Verify the release archive](releases.md), extract it into a directory separate from the QQ installation and plugin profile, and close QQ. Run the check first, then use `Install.cmd` or the corresponding PowerShell command with permission to write the installation.
 
 ~~~powershell
-.\Install.ps1 -QQRoot 'C:\Program Files\Tencent\QQNT' -CheckOnly
-.\Install.ps1 -QQRoot 'C:\Program Files\Tencent\QQNT'
+.\Install.ps1 -CheckOnly
+.\Install.ps1
 ~~~
 
 The installer uses the original `package.json` together with an unused bootstrap path, backs up the original package bytes and changes its entry point; signed QQ binaries remain unchanged. The created **QQNT (PhantomLoader)** shortcut starts the payload, which applies the in-memory verifier patch, supplies the native binding and installs the profiled wrapper inspection patches before normal wrapper initialization. The wrapper patches remain active independently of the DLVM capture setting.
 
-The default runtime directory is `PhantomLoaderQQNT` beneath the QQ root, and the default profile is `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`. Install parameters can select other absolute paths, including an existing compatible plugin profile. The installer reference describes all parameters and ownership checks.
+The default runtime directory is `PhantomLoaderQQNT` beneath the QQ root, and the default profile is `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`. Use the same path overrides for preflight and installation, including `-ProfileDirectory` to reuse an existing compatible profile. The full parameter example and directory requirements appear in the [installer reference](../distribution/README.md#install-and-launch).
 
 ## Default program capture
 

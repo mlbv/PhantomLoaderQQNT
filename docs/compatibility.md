@@ -3,7 +3,7 @@
 
 # Plugin API selection
 
-PhantomLoaderQQNT 1.0.0 provides the LiteLoader 5.2.1 API together with the extended PhantomLoader API. Each plugin selects its facade through the optional `api` field in manifest v4; when the field is absent, the loader selects LiteLoader so existing manifests continue to use their established surface.
+PhantomLoaderQQNT 1.1.0 provides the LiteLoader 5.2.1 API together with the extended PhantomLoader API. Each plugin selects its facade through the optional `api` field in manifest v4; when the field is absent, the loader selects LiteLoader so existing manifests continue to use their established surface.
 
 ~~~json
 {
@@ -31,8 +31,8 @@ LiteLoader plugins receive paths, the plugin registry, LiteLoader and QQ package
 
 | Property | Value |
 | --- | --- |
-| PhantomLoader.versions.phantomloader | "1.0.0" |
-| PhantomLoader.package.phantomloader.version | "1.0.0" |
+| PhantomLoader.versions.phantomloader | "1.1.0" |
+| PhantomLoader.package.phantomloader.version | "1.1.0" |
 | LiteLoader.versions.liteloader | "5.2.1" |
 | LiteLoader.package.liteloader.version | "5.2.1" |
 

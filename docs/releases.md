@@ -3,7 +3,7 @@
 
 # Release verification
 
-The Windows x64 release ZIP is compiled from the tagged source on GitHub-hosted Windows runners and includes a SHA-256 file, `build-info.json`, and `provenance.jsonl`. Corresponding source is available through GitHub's automatic **Source code (zip)** and **Source code (tar.gz)** downloads for the same signed tag.
+GitHub-hosted Windows runners build the Windows x64 release ZIP from the signed source tag. Each release provides the ZIP, its SHA-256 file, `build-info.json` and `provenance.jsonl` as separate assets, alongside GitHub's source downloads for that tag.
 
 PGP authenticates the annotated release tag and its target commit. GitHub's provenance attestation binds the downloaded archive's SHA-256 to the workflow, source commit and tag. The private PGP key remains with the maintainer; GitHub Actions only receives the public key. The signing primary fingerprint is:
 
@@ -23,19 +23,20 @@ gpg --show-keys --with-fingerprint .github/keys/release.asc
 gpg --import .github/keys/release.asc
 $tag = 'v1.0.0' # Replace with the release being verified.
 git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
-git -c gpg.format=openpgp verify-tag --raw $tag
-$commit = git --no-replace-objects rev-parse "${tag}^{commit}"
-git -c gpg.format=openpgp verify-commit --raw $commit
+if ($LASTEXITCODE) { throw 'Tag fetch failed.' }
+git --no-replace-objects -c gpg.format=openpgp verify-tag --raw "refs/tags/$tag"
+if ($LASTEXITCODE) { throw 'Tag signature verification failed.' }
+$commit = git --no-replace-objects rev-parse "refs/tags/${tag}^{commit}"
+if ($LASTEXITCODE) { throw 'Cannot resolve the release commit.' }
+git --no-replace-objects -c gpg.format=openpgp verify-commit --raw $commit
+if ($LASTEXITCODE) { throw 'Commit signature verification failed.' }
 ```
 
-Both verifications must succeed. Their `[GNUPG:] VALIDSIG` records must name the expected primary fingerprint (the last field for signing-subkey signatures); reject invalid, expired or revoked signatures and other signers. Once the source is authenticated, the helper below automates the stricter release checks. Run it from a checkout of that verified commit. Download the Windows x64 ZIP and its `.sha256` file into the current directory.
+Check that both `[GNUPG:] VALIDSIG` records name the expected primary fingerprint, which appears in the last field for a signing-subkey signature. Proceed only if both signatures are valid, current and made by the expected key. In the same PowerShell session, download the Windows x64 ZIP and its `.sha256` file into the current directory, then check out the verified commit to run its release helper.
 
 ```powershell
-$tag = 'v1.0.0' # Replace with the release being verified.
-git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
-if ($LASTEXITCODE) { throw 'Tag fetch failed.' }
-$commit = git rev-parse "${tag}^{commit}"
-if ($LASTEXITCODE) { throw 'Cannot resolve the release commit.' }
+git --no-replace-objects switch --detach $commit
+if ($LASTEXITCODE) { throw 'Cannot check out the verified release commit.' }
 pwsh -File .github/scripts/verify-release.ps1 -Tag $tag -ExpectedCommit $commit
 if ($LASTEXITCODE) { throw 'PGP verification failed.' }
 

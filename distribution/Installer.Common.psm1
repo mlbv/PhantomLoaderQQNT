@@ -204,6 +204,9 @@ function Read-QQSelector {
             if (-not $keys.Add($name)) { throw "Duplicate QQNT version selector field: $name" }
         }
     }
+    if ($selector.PSObject.Properties.Name -inotcontains 'readyVersion') {
+        Add-Member -InputObject $selector -NotePropertyName 'readyVersion' -NotePropertyValue ''
+    }
     foreach ($name in @('curVersion', 'baseVersion', 'buildId', 'readyVersion')) {
         if ($selector.PSObject.Properties.Name -cnotcontains $name -or $selector.$name -isnot [string]) { throw "QQNT version selector requires the exact string field '$name'." }
     }

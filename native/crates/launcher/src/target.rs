@@ -67,11 +67,14 @@ impl<'de> Deserialize<'de> for Selectors {
                         }
                         selectors.0[index] = Some(map.next_value::<String>()?);
                     } else {
+                        if key.eq_ignore_ascii_case("readyVersion") {
+                            return Err(de::Error::custom("incorrect version selector field case"));
+                        }
                         let raw = map.next_value::<&RawValue>()?;
                         validate_unknown(raw, 1).map_err(de::Error::custom)?;
                     }
                 }
-                if selectors.0[..4].iter().any(Option::is_none) {
+                if selectors.0[..3].iter().any(Option::is_none) {
                     return Err(de::Error::custom("missing version selector"));
                 }
                 Ok(selectors)
@@ -139,7 +142,7 @@ impl<'de> DeserializeSeed<'de> for UnknownValue {
 }
 
 pub fn validate_version_selector(json: &[u8], profile: &TargetProfile<'_>) -> Result<()> {
-    const INVALID: &str = "versions/config.json must be valid UTF-8 JSON with unique, top-level curVersion, baseVersion, buildId and readyVersion strings, and an empty readyInstaller string when present";
+    const INVALID: &str = "versions/config.json must be valid UTF-8 JSON with unique top-level curVersion, baseVersion and buildId strings, an optional readyVersion string, and an empty readyInstaller string when present";
     if json.is_empty() || json.len() as u64 > MAX_SELECTOR_BYTES {
         return Err(INVALID.into());
     }
