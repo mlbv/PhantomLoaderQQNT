@@ -8,7 +8,7 @@ const store = require("./store.js");
 const config = PhantomLoader.api.config.get("PhantomLoader", require("../common/static/config.json"));
 
 function topologicalSort(plugins) {
-    const sorted = {};
+    const sorted = Object.create(null);
     const visited = new Set();
     const visiting = new Set();
     const visit = (slug) => {
@@ -27,10 +27,6 @@ function topologicalSort(plugins) {
 }
 
 function getPluginInstance(plugin) {
-    const api = plugin.manifest.api ?? "LiteLoader";
-    if (api !== "LiteLoader" && api !== "PhantomLoader") {
-        throw new TypeError(`Unknown plugin API: ${api} (${plugin.manifest.slug})`);
-    }
     return {
         manifest: plugin.manifest,
         incompatible: !plugin.manifest.platform.includes(PhantomLoader.os.platform),
@@ -47,14 +43,13 @@ function getPluginInstance(plugin) {
     };
 }
 
-exports.loadAllPlugins = () => {
+exports.loadAllPlugins = (activated = new Map()) => {
     if (config.enable_plugins) {
-        const dependencies = new Set();
-        const plugins = {};
-        // 加载插件信息
+        const plugins = Object.create(null);
         for (const plugin of store.scanPluginDirectory()) {
-            plugin.manifest.dependencies?.forEach(slug => dependencies.add(slug));
-            plugins[plugin.manifest.slug] = getPluginInstance(plugin);
+            const { slug } = plugin.manifest;
+            if (activated.has(slug) && activated.get(slug) !== plugin.path) continue;
+            plugins[slug] = getPluginInstance(plugin);
         }
         PhantomLoader.plugins = topologicalSort(plugins);
     }

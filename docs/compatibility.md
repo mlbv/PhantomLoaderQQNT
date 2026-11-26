@@ -3,7 +3,7 @@
 
 # Plugin API selection
 
-PhantomLoaderQQNT 1.1.0 provides the LiteLoader 5.2.1 API together with the extended PhantomLoader API. Each plugin selects its facade through the optional `api` field in manifest v4; when the field is absent, the loader selects LiteLoader so existing manifests continue to use their established surface.
+PhantomLoaderQQNT 1.2.0 provides the LiteLoader 5.2.1 API together with the extended PhantomLoader API. Each plugin selects its facade through the optional `api` field in manifest v4; when the field is absent, the loader selects LiteLoader so existing manifests continue to use their established surface.
 
 ~~~json
 {
@@ -31,8 +31,8 @@ LiteLoader plugins receive paths, the plugin registry, LiteLoader and QQ package
 
 | Property | Value |
 | --- | --- |
-| PhantomLoader.versions.phantomloader | "1.1.0" |
-| PhantomLoader.package.phantomloader.version | "1.1.0" |
+| PhantomLoader.versions.phantomloader | "1.2.0" |
+| PhantomLoader.package.phantomloader.version | "1.2.0" |
 | LiteLoader.versions.liteloader | "5.2.1" |
 | LiteLoader.package.liteloader.version | "5.2.1" |
 
@@ -40,4 +40,4 @@ Here, PhantomLoader names the object passed to an opted-in plugin's initializer.
 
 `PHANTOMLOADERQQNT_PROFILE` takes precedence over `LITELOADERQQNT_PROFILE`; both variables select a profile containing plugin and data directories. Core configuration uses `data/LiteLoader/config.json` for either reserved loader slug, and plugin registration, dependency resolution, existing lifecycle exports and manifest v4 retain their established contracts.
 
-The `local://` resource scheme and legacy settings CSS classes remain available, while settings navigation and content carry the `phantomloader` class. The preload bridge routes the two facades through their respective `PhantomLoader.PhantomLoader.PhantomLoader` and `LiteLoader.LiteLoader.LiteLoader` channels.
+The `local://` resource scheme and legacy settings CSS classes remain available, while settings navigation and content carry the `phantomloader` class. The preload bridge uses the respective `PhantomLoader.PhantomLoader.PhantomLoader` and `LiteLoader.LiteLoader.LiteLoader` channels.

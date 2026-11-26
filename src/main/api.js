@@ -87,9 +87,19 @@ Object.defineProperty(globalThis, "LiteLoader", {
     }
 });
 
+const rendererOperations = new Map([
+    ["api.config.get", store.getPluginConfig],
+    ["api.config.set", store.setPluginConfig],
+    ["api.plugin.install", store.installPlugin],
+    ["api.plugin.delete", store.deletePlugin],
+    ["api.plugin.disable", store.disablePlugin],
+    ["api.openExternal", PhantomLoader.api.openExternal],
+    ["api.openPath", PhantomLoader.api.openPath]
+]);
+
 const handleApi = api => (event, method, args) => {
     event.returnValue = method.length ?
-        method.reduce((obj, key) => obj?.[key], api)?.(...args) :
+        rendererOperations.get(method.join("."))?.(...args) ?? null :
         JSON.parse(JSON.stringify(api));
 };
 electron.ipcMain.on("PhantomLoader.PhantomLoader.PhantomLoader", handleApi(PhantomLoader));

@@ -113,7 +113,7 @@ function Get-PlatformBundle {
         $manifest.loaderVersion -isnot [string]) { throw 'Unsupported bundle schema or version.' }
     $profile = Read-JsonFile (Join-SafePath $root 'profile.json')
     if ($profile.platformVersion -isnot [string] -or $manifest.bundleVersion -cne $profile.platformVersion) { throw 'Bundle/profile mismatch: platformVersion' }
-    if ($profile.schemaVersion -ne 1 -or $profile.qqVersion -cne '9.9.37-54395' -or [string]$profile.buildVersion -cne '54395' -or $profile.platform -cne 'win32' -or $profile.architecture -cne 'x64' -or $profile.loaderVersion -isnot [string] -or $profile.loaderVersion -cne $profile.platformVersion -or $profile.liteloaderCompatibilityVersion -cne '5.2.1' -or $profile.nativeApiVersion -ne 1) { throw 'Unsupported QQNT platform profile.' }
+    if ($profile.schemaVersion -ne 1 -or $profile.qqVersion -cne '9.9.38-54985' -or [string]$profile.buildVersion -cne '54985' -or $profile.platform -cne 'win32' -or $profile.architecture -cne 'x64' -or $profile.loaderVersion -isnot [string] -or $profile.loaderVersion -cne $profile.platformVersion -or $profile.liteloaderCompatibilityVersion -cne '5.2.1' -or $profile.nativeApiVersion -ne 1) { throw 'Unsupported QQNT platform profile.' }
     foreach ($key in @('qqVersion', 'loaderVersion', 'liteloaderCompatibilityVersion', 'nativeApiVersion')) {
         if ($manifest.$key -cne $profile.$key) { throw "Bundle/profile mismatch: $key" }
     }
@@ -216,8 +216,32 @@ function Read-QQSelector {
     return $selector
 }
 
+function Clear-UnsupportedPendingUpdate {
+    param([string]$QQRoot, $Profile, [switch]$Preview)
+    $path = Join-SafePath $QQRoot 'versions/config.json'
+    $selector = Read-QQSelector $path
+    if ($selector.curVersion -cne $Profile.qqVersion) { return }
+    if (@($Profile.selectorBases | Where-Object { $_.baseVersion -ceq $selector.baseVersion -and $_.buildId -ceq $selector.buildId }).Count -eq 0) { return }
+    $pending = $selector.readyVersion
+    if (-not $pending -or $pending -ceq $Profile.qqVersion) { return }
+    if ($Preview) {
+        Write-Output "QQNT has a staged update to $pending, which this bundle does not support; it would be skipped."
+        return
+    }
+    $selector.readyVersion = ''
+    $temporary = Join-Path (Split-Path -Parent $path) ('.config-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $backup = $temporary + '.bak'
+    try {
+        [IO.File]::WriteAllText($temporary, ($selector | ConvertTo-Json -Depth 10), $script:Utf8)
+        [IO.File]::Replace($temporary, $path, $backup)
+    } finally {
+        foreach ($leftover in @($temporary, $backup)) { if (Test-Path -LiteralPath $leftover) { [IO.File]::Delete($leftover) } }
+    }
+    Write-Output "Skipped the staged QQNT update to $pending; this bundle supports $($Profile.qqVersion)."
+}
+
 function Assert-QQProfile {
-    param([string]$QQRoot, $Profile, [switch]$OriginalPackage)
+    param([string]$QQRoot, $Profile, [switch]$OriginalPackage, [switch]$PendingUpdateHandled)
     Assert-NoReparsePoint $QQRoot
     $qqntPath = $QQRoot + '\versions\' + $Profile.qqVersion + '\QQNT.dll'
     if ($qqntPath.Length -ge 260) { throw 'The QQNT.dll path must contain fewer than 260 UTF-16 code units for the native payload.' }
@@ -225,7 +249,7 @@ function Assert-QQProfile {
     if ($selector.curVersion -cne $Profile.qqVersion) { throw 'QQNT version selector curVersion does not match the pinned profile.' }
     $matchingBases = @($Profile.selectorBases | Where-Object { $_.baseVersion -ceq $selector.baseVersion -and $_.buildId -ceq $selector.buildId })
     if ($matchingBases.Count -eq 0) { throw 'QQNT version selector baseVersion/buildId pair does not match the pinned profile.' }
-    if ($selector.readyVersion -and $selector.readyVersion -cne $Profile.qqVersion) { throw 'QQNT has a pending version update. This bundle cannot launch or modify it.' }
+    if (-not $PendingUpdateHandled -and $selector.readyVersion -and $selector.readyVersion -cne $Profile.qqVersion) { throw 'QQNT has a pending version update. This bundle cannot launch or modify it.' }
     foreach ($entry in $Profile.files) { Assert-FileFingerprint $QQRoot $entry }
     $packagePath = Join-SafePath $QQRoot $Profile.originalPackage.path
     $package = Read-JsonFile $packagePath
@@ -272,25 +296,91 @@ function Get-BytesHash {
     finally { $sha.Dispose() }
 }
 
+function Test-PackageHash {
+    param([string]$Path, [string]$Hash)
+    return (Test-Path -LiteralPath $Path -PathType Leaf) -and
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ieq $Hash
+}
+
+function Replace-PackageFile {
+    param([string]$Source, [string]$Destination, [string]$Backup, [string]$PreviousHash, [string]$ExpectedHash)
+    if (-not (Test-PackageHash $Destination $PreviousHash)) {
+        throw "The package changed before replacement: $Destination"
+    }
+    [IO.File]::Replace($Source, $Destination, $Backup)
+    if (-not (Test-PackageHash $Backup $PreviousHash) -or -not (Test-PackageHash $Destination $ExpectedHash)) {
+        throw "The replacement package could not be verified: $Destination"
+    }
+}
+
+function Restore-PackageAfterFailure {
+    param([string]$Destination, [string]$Backup, [byte[]]$Original, [string]$ReplacementHash)
+    $originalHash = Get-BytesHash $Original
+    if (Test-PackageHash $Destination $originalHash) { return }
+    $destinationExists = Test-Path -LiteralPath $Destination
+    if ($destinationExists -and -not (Test-PackageHash $Destination $ReplacementHash)) {
+        throw "The package changed during replacement: $Destination"
+    }
+
+    $restore = "$Backup.restore"
+    $restoreHash = $originalHash
+    if (Test-Path -LiteralPath $Backup -PathType Leaf) {
+        $restoreHash = (Get-FileHash -LiteralPath $Backup -Algorithm SHA256).Hash
+        [IO.File]::Copy($Backup, $restore, $false)
+    } else {
+        [IO.File]::WriteAllBytes($restore, $Original)
+    }
+    if ($destinationExists) {
+        [IO.File]::Replace($restore, $Destination, "$Backup.displaced")
+    } else {
+        [IO.File]::Move($restore, $Destination)
+    }
+    if (-not (Test-PackageHash $Destination $restoreHash) -or $restoreHash -ine $originalHash) {
+        throw "The package could not be restored to its verified preflight contents: $Destination"
+    }
+}
+
+function Remove-PackageReplacementFiles {
+    param([string]$Source, [string]$Backup)
+    foreach ($path in @($Source, $Backup, "$Backup.restore", "$Backup.displaced")) {
+        if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) }
+    }
+}
+
 function Assert-InstallState {
-    param([string]$InstallDirectory, [string]$QQRoot)
+    param([string]$InstallDirectory, [string]$QQRoot, [switch]$ForRemoval, [switch]$PendingUpdateHandled)
     $bundle = Get-PlatformBundle $InstallDirectory -Installed
     $state = Read-JsonFile (Join-SafePath $bundle.Root 'state.json')
     if ($state.schemaVersion -ne 1 -or $state.product -cne 'PhantomLoaderQQNT' -or $state.installDirectory -ine $bundle.Root -or ($QQRoot -and $state.qqRoot -ine (Get-AbsolutePath $QQRoot))) { throw 'Installation receipt does not match this installation.' }
     $locations = Get-PlatformLocations $state.qqRoot $state.installDirectory $state.profileDirectory $state.desktopDirectory
-    $packagePath = Assert-QQProfile $locations.QQRoot $bundle.Profile
+    $packagePath = if ($ForRemoval) { Join-SafePath $locations.QQRoot $bundle.Profile.originalPackage.path }
+        else { Assert-QQProfile $locations.QQRoot $bundle.Profile -PendingUpdateHandled:$PendingUpdateHandled }
     $backupPath = Join-SafePath $bundle.Root 'original-package.bin'
     $backup = Get-FileFingerprint $backupPath 'original-package.bin'
     if ($backup.bytes -ne $bundle.Profile.originalPackage.bytes -or $backup.sha256 -cne $bundle.Profile.originalPackage.sha256 -or $state.originalPackageSha256 -cne $backup.sha256) { throw 'Original package backup does not match the pinned original.' }
     $originalBytes = [IO.File]::ReadAllBytes($backupPath)
     $modifiedHash = Get-BytesHash (Get-ModifiedPackageBytes $originalBytes)
-    $actual = Get-FileFingerprint $packagePath $bundle.Profile.originalPackage.path
-    if ($actual.sha256 -cne $modifiedHash -or $state.modifiedPackageSha256 -cne $modifiedHash) { throw 'QQNT package changed after installation; refusing to overwrite or launch it.' }
-    $bootstrapRelative = 'versions/' + $bundle.Profile.qqVersion + '/resources/app/app_launcher/PhantomLoaderQQNT.js'
-    $bootstrap = Join-SafePath $locations.QQRoot $bootstrapRelative
+    if ($state.modifiedPackageSha256 -cne $modifiedHash) { throw 'The installed package fingerprint receipt is invalid.' }
+    $bootstrap = Join-SafePath (Split-Path -Parent $packagePath) 'app_launcher/PhantomLoaderQQNT.js'
+    $restorePackage = Test-PackageHash $packagePath $modifiedHash
+    if (-not $restorePackage) {
+        if (-not $ForRemoval) { throw 'QQNT package changed after installation; refusing to launch it.' }
+        if (Test-Path -LiteralPath $packagePath) {
+            $package = Read-JsonFile $packagePath
+            if ($package.PSObject.Properties.Name -ccontains 'main' -and $package.main -is [string] -and $package.main) {
+                $mainPath = [IO.Path]::GetFullPath([IO.Path]::Combine((Split-Path -Parent $packagePath), $package.main))
+                if ($mainPath -ieq $bootstrap -or "$mainPath.js" -ieq $bootstrap) {
+                    throw 'QQNT package changed after installation and still references the owned bootstrap; refusing to remove it.'
+                }
+            }
+        }
+    }
     if ($state.ownsBootstrapDirectory -isnot [bool]) { throw 'The bootstrap directory ownership receipt is invalid.' }
     $bootstrapHash = Get-BytesHash $script:Utf8.GetBytes((Get-BootstrapText $bundle.Root $locations.ProfileDirectory))
-    if ($state.bootstrapSha256 -cne $bootstrapHash -or (Get-FileFingerprint $bootstrap $bootstrapRelative).sha256 -cne $bootstrapHash) { throw 'The owned bootstrap has changed.' }
+    if ($state.bootstrapSha256 -cne $bootstrapHash -or
+        ((-not $ForRemoval -or (Test-Path -LiteralPath $bootstrap)) -and -not (Test-PackageHash $bootstrap $bootstrapHash))) {
+        throw 'The owned bootstrap has changed.'
+    }
     $owned = @($bundle.Manifest.files) + @((Get-FileFingerprint (Join-SafePath $bundle.Root 'bundle.json') 'bundle.json'), $backup)
     Assert-ExactFileSet @($state.ownedFiles | ForEach-Object { $_.path }) @($owned | ForEach-Object { $_.path }) 'Receipt'
     foreach ($entry in $owned) {
@@ -299,25 +389,68 @@ function Assert-InstallState {
     }
     $shortcutPath = Join-SafePath $locations.DesktopDirectory 'QQNT (PhantomLoader).lnk'
     if ($state.shortcut.path -ine $shortcutPath) { throw 'Shortcut receipt has an unexpected path.' }
-    if (Test-Path -LiteralPath $shortcutPath) {
-        $shortcut = Get-FileFingerprint $shortcutPath 'QQNT (PhantomLoader).lnk'
-        if ($shortcut.sha256 -cne $state.shortcut.sha256 -or $shortcut.bytes -ne $state.shortcut.bytes) { throw 'The installed shortcut has changed.' }
+    return [pscustomobject]@{
+        Bundle = $bundle; State = $state; Locations = $locations; PackagePath = $packagePath
+        BootstrapPath = $bootstrap; ShortcutPath = $shortcutPath; BackupPath = $backupPath; RestorePackage = $restorePackage
     }
-    return [pscustomobject]@{ Bundle = $bundle; State = $state; Locations = $locations; PackagePath = $packagePath; BootstrapPath = $bootstrap; ShortcutPath = $shortcutPath; BackupPath = $backupPath }
 }
 
 function New-PlatformShortcut {
     param([string]$Path, [string]$InstallDirectory, [string]$QQRoot)
+    $fields = Get-PlatformShortcutFields $InstallDirectory $QQRoot
     $shell = New-Object -ComObject WScript.Shell
     try {
         $shortcut = $shell.CreateShortcut($Path)
-        $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDirectory 'Launch.ps1') + '" -ShowErrorDialog'
-        $shortcut.WorkingDirectory = $QQRoot
-        $shortcut.IconLocation = (Join-Path $QQRoot 'QQ.exe') + ',0'
-        $shortcut.Description = 'Launch QQNT with PhantomLoaderQQNT'
+        $shortcut.TargetPath = $fields.TargetPath
+        $shortcut.Arguments = $fields.Arguments
+        $shortcut.WorkingDirectory = $fields.WorkingDirectory
+        $shortcut.IconLocation = $fields.IconLocation
+        $shortcut.Description = $fields.Description
         $shortcut.Save()
     } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+}
+
+function Get-PlatformShortcutFields {
+    param([string]$InstallDirectory, [string]$QQRoot)
+    return [pscustomobject]@{
+        TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDirectory 'Launch.ps1') + '" -ShowErrorDialog'
+        WorkingDirectory = $QQRoot
+        IconLocation = (Join-Path $QQRoot 'QQ.exe') + ',0'
+        Description = 'Launch QQNT with PhantomLoaderQQNT'
+    }
+}
+
+function Test-PlatformShortcutFile {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    $shell = New-Object -ComObject WScript.Shell
+    try {
+        try { $link = $shell.CreateShortcut($Path) } catch { throw "An unrelated file already occupies the destination: $Path" }
+        if (-not $link.TargetPath) { throw "An unrelated file already occupies the destination: $Path" }
+        return $true
+    } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+}
+
+function Set-PlatformShortcut {
+    param([string]$Path, [string]$InstallDirectory, [string]$QQRoot)
+    $fields = Get-PlatformShortcutFields $InstallDirectory $QQRoot
+    if (Test-Path -LiteralPath $Path) {
+        $shell = New-Object -ComObject WScript.Shell
+        try {
+            try { $link = $shell.CreateShortcut($Path) } catch { throw "An unrelated file already occupies the destination: $Path" }
+            $current = [pscustomobject]@{
+                TargetPath = $link.TargetPath; Arguments = $link.Arguments; WorkingDirectory = $link.WorkingDirectory
+                IconLocation = $link.IconLocation; Description = $link.Description
+            }
+        } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+        if (-not $current.TargetPath) { throw "An unrelated file already occupies the destination: $Path" }
+        if ($current.TargetPath -ieq $fields.TargetPath -and $current.Arguments -ceq $fields.Arguments -and
+            $current.WorkingDirectory -ieq $fields.WorkingDirectory -and $current.IconLocation -ieq $fields.IconLocation -and
+            $current.Description -ceq $fields.Description) { return $false }
+    }
+    New-PlatformShortcut $Path $InstallDirectory $QQRoot
+    return $true
 }
 
 function Assert-BundleOutsideDestination {
@@ -335,32 +468,43 @@ function Invoke-PlatformInstall {
     Assert-BundleOutsideDestination $bundle.Root $locations
     Assert-QQStopped
     if (Test-Path -LiteralPath $locations.InstallDirectory) {
-        $installed = Assert-InstallState $locations.InstallDirectory $locations.QQRoot
+        $installed = Assert-InstallState $locations.InstallDirectory $locations.QQRoot -PendingUpdateHandled
         if ($installed.Locations.ProfileDirectory -ine $locations.ProfileDirectory -or $installed.Locations.DesktopDirectory -ine $locations.DesktopDirectory -or (Get-FileFingerprint (Join-Path $bundle.Root 'bundle.json') 'bundle.json').sha256 -cne (Get-FileFingerprint (Join-Path $installed.Bundle.Root 'bundle.json') 'bundle.json').sha256) { throw 'An existing installation has different paths or bundle contents.' }
         Write-Output 'The matching platform installation is already present and verified.'
         return
     }
-    $packagePath = Assert-QQProfile $locations.QQRoot $bundle.Profile -OriginalPackage
+    $packagePath = Assert-QQProfile $locations.QQRoot $bundle.Profile -OriginalPackage -PendingUpdateHandled
     $appRoot = Split-Path -Parent $packagePath
     $bootstrap = Join-SafePath $appRoot 'app_launcher/PhantomLoaderQQNT.js'
     $shortcut = Join-SafePath $locations.DesktopDirectory 'QQNT (PhantomLoader).lnk'
-    foreach ($path in @($bootstrap, $shortcut)) { if (Test-Path -LiteralPath $path) { throw "An unrelated file already occupies the destination: $path" } }
+    if (Test-Path -LiteralPath $bootstrap) { throw "An unrelated file already occupies the destination: $bootstrap" }
+    $shortcutExisted = Test-PlatformShortcutFile $shortcut
     $bootstrapDirectory = Split-Path -Parent $bootstrap
     $ownsBootstrapDirectory = -not (Test-Path -LiteralPath $bootstrapDirectory)
     if (-not $ownsBootstrapDirectory -and -not (Test-Path -LiteralPath $bootstrapDirectory -PathType Container)) { throw "The bootstrap directory path is occupied by a file: $bootstrapDirectory" }
     if (-not (Test-Path -LiteralPath $locations.DesktopDirectory -PathType Container)) { throw 'The desktop directory must already exist.' }
-    if ($CheckOnly) { Write-Output 'Installation preflight passed; no files changed.'; return }
-    if (-not $PSCmdlet.ShouldProcess($locations.QQRoot, 'Install PhantomLoaderQQNT platform and desktop shortcut')) { return }
     $parent = Split-Path -Parent $locations.InstallDirectory
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw 'The installation parent directory must already exist.' }
+    if ($CheckOnly) {
+        Clear-UnsupportedPendingUpdate $locations.QQRoot $bundle.Profile -Preview
+        Write-Output 'Installation preflight passed; no files changed.'
+        return
+    }
+    if (-not $PSCmdlet.ShouldProcess($locations.QQRoot, 'Install PhantomLoaderQQNT platform and desktop shortcut')) { return }
+    Clear-UnsupportedPendingUpdate $locations.QQRoot $bundle.Profile
     $stage = Join-Path $parent ('.PhantomLoaderQQNT-stage-' + [Guid]::NewGuid().ToString('N'))
     $packageTemp = Join-Path $appRoot ('.PhantomLoaderQQNT-package-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $packageRecovery = "$packageTemp.bak"
     $shortcutTemp = Join-Path $locations.DesktopDirectory ('.PhantomLoaderQQNT-' + [Guid]::NewGuid().ToString('N') + '.lnk')
     $bootstrapStage = Join-Path $appRoot ('.PhantomLoaderQQNT-bootstrap-' + [Guid]::NewGuid().ToString('N'))
     $createdInstall = $false
     $createdBootstrap = $false
     $createdBootstrapDirectory = $false
     $createdShortcut = $false
+    $replacedShortcut = $false
+    $shortcutBackup = $shortcutTemp + '.bak'
+    $packageAttempted = $false
+    $keepRecovery = $false
     try {
         [void][IO.Directory]::CreateDirectory($stage)
         foreach ($entry in $bundle.Manifest.files) {
@@ -391,7 +535,7 @@ function Invoke-PlatformInstall {
             [IO.File]::WriteAllBytes((Join-Path $bootstrapStage 'PhantomLoaderQQNT.js'), $bootstrapBytes)
         }
         Assert-QQStopped
-        [void](Assert-QQProfile $locations.QQRoot $bundle.Profile -OriginalPackage)
+        [void](Assert-QQProfile $locations.QQRoot $bundle.Profile -OriginalPackage -PendingUpdateHandled)
         [IO.Directory]::Move($stage, $locations.InstallDirectory)
         $createdInstall = $true
         if ($ownsBootstrapDirectory) {
@@ -403,17 +547,39 @@ function Invoke-PlatformInstall {
             $createdBootstrap = $true
             try { $stream.Write($bootstrapBytes, 0, $bootstrapBytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
         }
-        [IO.File]::Move($shortcutTemp, $shortcut)
-        $createdShortcut = $true
-        [IO.File]::Replace($packageTemp, $packagePath, [NullString]::Value)
+        if ($shortcutExisted) {
+            [IO.File]::Replace($shortcutTemp, $shortcut, $shortcutBackup)
+            $replacedShortcut = $true
+        } else {
+            [IO.File]::Move($shortcutTemp, $shortcut)
+            $createdShortcut = $true
+        }
+        $packageAttempted = $true
+        Replace-PackageFile $packageTemp $packagePath $packageRecovery $state.originalPackageSha256 $state.modifiedPackageSha256
     } catch {
+        $failure = $_
+        if ($packageAttempted) {
+            $keepRecovery = $true
+            try {
+                Restore-PackageAfterFailure $packagePath $packageRecovery $original $state.modifiedPackageSha256
+                $keepRecovery = $false
+            } catch {
+                throw "Installation failed and package recovery could not be verified. The installation at '$($locations.InstallDirectory)' and recovery files beside '$packageRecovery' were retained. $($failure.Exception.Message) $($_.Exception.Message)"
+            }
+        }
+        if ($replacedShortcut -and (Test-Path -LiteralPath $shortcutBackup)) {
+            if (Test-Path -LiteralPath $shortcut) { [IO.File]::Delete($shortcut) }
+            [IO.File]::Move($shortcutBackup, $shortcut)
+        }
         if ($createdShortcut) { [IO.File]::Delete($shortcut) }
         if ($createdBootstrap) { [IO.File]::Delete($bootstrap) }
         if ($createdBootstrapDirectory -and @(Get-ChildItem -LiteralPath $bootstrapDirectory -Force).Count -eq 0) { [IO.Directory]::Delete($bootstrapDirectory) }
         if ($createdInstall) { Remove-Item -LiteralPath $locations.InstallDirectory -Recurse -Force -Confirm:$false }
-        throw "Installation failed and its new assets were rolled back. If Windows denied access under Program Files, rerun PowerShell as administrator. $($_.Exception.Message)"
+        throw "Installation failed and its new assets were rolled back. If Windows denied access under Program Files, rerun PowerShell as administrator. $($failure.Exception.Message)"
     } finally {
-        foreach ($path in @($packageTemp, $shortcutTemp)) { if (Test-Path -LiteralPath $path) { [IO.File]::Delete($path) } }
+        if (-not $keepRecovery) { Remove-PackageReplacementFiles $packageTemp $packageRecovery }
+        if (Test-Path -LiteralPath $shortcutTemp) { [IO.File]::Delete($shortcutTemp) }
+        if (Test-Path -LiteralPath $shortcutBackup) { [IO.File]::Delete($shortcutBackup) }
         if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -Confirm:$false }
         if (Test-Path -LiteralPath $bootstrapStage) { Remove-Item -LiteralPath $bootstrapStage -Recurse -Force -Confirm:$false }
     }
@@ -433,10 +599,16 @@ function Invoke-PlatformInjector {
 function Invoke-PlatformLaunch {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory = $true)][string]$InstallDirectory, [switch]$CheckOnly)
-    $installed = Assert-InstallState $InstallDirectory
+    $installed = Assert-InstallState $InstallDirectory -PendingUpdateHandled
     Assert-QQStopped
-    if ($CheckOnly) { Write-Output 'Launch verification passed; no process started.'; return }
+    if ($CheckOnly) {
+        Clear-UnsupportedPendingUpdate $installed.Locations.QQRoot $installed.Bundle.Profile -Preview
+        Write-Output 'Launch verification passed; no process started.'
+        return
+    }
     if (-not $PSCmdlet.ShouldProcess($installed.Locations.QQRoot, 'Launch verified QQNT through the platform injector')) { return }
+    Clear-UnsupportedPendingUpdate $installed.Locations.QQRoot $installed.Bundle.Profile
+    try { [void](Set-PlatformShortcut $installed.ShortcutPath $installed.Locations.InstallDirectory $installed.Locations.QQRoot) } catch { }
     $captures = Join-SafePath $installed.Locations.ProfileDirectory 'data/dlvm_capture/captures'
     [void][IO.Directory]::CreateDirectory($captures)
     $env:PHANTOMLOADERQQNT_PROFILE = $installed.Locations.ProfileDirectory
@@ -448,45 +620,76 @@ function Invoke-PlatformUninstall {
     param([string]$QQRoot, [string]$InstallDirectory, [switch]$CheckOnly)
     $root = Resolve-PlatformQQRoot $QQRoot
     if (-not $InstallDirectory) { $InstallDirectory = Join-Path $root 'PhantomLoaderQQNT' }
-    $installed = Assert-InstallState $InstallDirectory $root
+    $installed = Assert-InstallState $InstallDirectory $root -ForRemoval
     Assert-QQStopped
     if ($CheckOnly) { Write-Output 'Uninstallation preflight passed; all profile plugins and data will be retained.'; return }
-    if (-not $PSCmdlet.ShouldProcess($root, 'Restore the original QQNT package and remove owned platform files; retain the entire profile')) { return }
+    if (-not $PSCmdlet.ShouldProcess($root, 'Remove owned platform files and restore the QQNT package if it still matches the installation receipt')) { return }
     $token = [Guid]::NewGuid().ToString('N')
     $temporary = Join-Path (Split-Path -Parent $installed.PackagePath) ('.PhantomLoaderQQNT-restore-' + $token + '.tmp')
+    $packageRecovery = "$temporary.bak"
     $retiredInstall = Join-Path (Split-Path -Parent $installed.Bundle.Root) ('.PhantomLoaderQQNT-remove-' + $token)
     $retiredBootstrap = Join-Path (Split-Path -Parent $installed.BootstrapPath) ('.PhantomLoaderQQNT-remove-' + $token + '.js')
     $retiredShortcut = Join-Path (Split-Path -Parent $installed.ShortcutPath) ('.PhantomLoaderQQNT-remove-' + $token + '.lnk')
     $movedInstall = $false; $movedBootstrap = $false; $movedShortcut = $false
+    $packageAttempted = $false
+    $keepRecovery = $false
     try {
-        [IO.File]::Copy($installed.BackupPath, $temporary, $false)
         Assert-QQStopped
-        [void](Assert-InstallState $InstallDirectory $root)
-        [IO.File]::Move($installed.BootstrapPath, $retiredBootstrap)
-        $movedBootstrap = $true
+        $installed = Assert-InstallState $InstallDirectory $root -ForRemoval
+        if ($installed.RestorePackage) {
+            $original = [IO.File]::ReadAllBytes($installed.BackupPath)
+            $modified = Get-ModifiedPackageBytes $original
+            [IO.File]::WriteAllBytes($temporary, $original)
+        }
+        if (Test-Path -LiteralPath $installed.BootstrapPath) {
+            [IO.File]::Move($installed.BootstrapPath, $retiredBootstrap)
+            $movedBootstrap = $true
+        }
         if (Test-Path -LiteralPath $installed.ShortcutPath) {
             [IO.File]::Move($installed.ShortcutPath, $retiredShortcut)
             $movedShortcut = $true
         }
         [IO.Directory]::Move($installed.Bundle.Root, $retiredInstall)
         $movedInstall = $true
-        [IO.File]::Replace($temporary, $installed.PackagePath, [NullString]::Value)
+        if ($installed.RestorePackage) {
+            $packageAttempted = $true
+            Replace-PackageFile $temporary $installed.PackagePath $packageRecovery $installed.State.modifiedPackageSha256 $installed.State.originalPackageSha256
+        }
     } catch {
+        $failure = $_
+        $recoveryFailure = $null
+        if ($packageAttempted) {
+            $keepRecovery = $true
+            try {
+                Restore-PackageAfterFailure $installed.PackagePath $packageRecovery $modified $installed.State.originalPackageSha256
+                $keepRecovery = $false
+            } catch { $recoveryFailure = $_ }
+        }
         if ($movedInstall) { [IO.Directory]::Move($retiredInstall, $installed.Bundle.Root) }
         if ($movedShortcut) { [IO.File]::Move($retiredShortcut, $installed.ShortcutPath) }
         if ($movedBootstrap) { [IO.File]::Move($retiredBootstrap, $installed.BootstrapPath) }
-        throw "Uninstallation stopped and its moves were rolled back. The profile was retained. If Windows denied access under Program Files, rerun PowerShell as administrator. $($_.Exception.Message)"
-    } finally { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
+        if ($recoveryFailure) {
+            throw "Uninstallation stopped and package recovery could not be verified. Recovery files beside '$packageRecovery' were retained. $($failure.Exception.Message) $($recoveryFailure.Exception.Message)"
+        }
+        throw "Uninstallation stopped and its moves were rolled back. The profile was retained. If Windows denied access under Program Files, rerun PowerShell as administrator. $($failure.Exception.Message)"
+    } finally {
+        if (-not $keepRecovery) { Remove-PackageReplacementFiles $temporary $packageRecovery }
+    }
     try {
-        [IO.File]::Delete($retiredBootstrap)
+        if ($movedBootstrap) { [IO.File]::Delete($retiredBootstrap) }
         $bootstrapDirectory = Split-Path -Parent $installed.BootstrapPath
-        if ($installed.State.ownsBootstrapDirectory -and @(Get-ChildItem -LiteralPath $bootstrapDirectory -Force).Count -eq 0) { [IO.Directory]::Delete($bootstrapDirectory) }
+        if ($installed.State.ownsBootstrapDirectory -and (Test-Path -LiteralPath $bootstrapDirectory -PathType Container) -and
+            @(Get-ChildItem -LiteralPath $bootstrapDirectory -Force).Count -eq 0) { [IO.Directory]::Delete($bootstrapDirectory) }
         if ($movedShortcut) { [IO.File]::Delete($retiredShortcut) }
         Remove-Item -LiteralPath $retiredInstall -Recurse -Force -Confirm:$false
     } catch {
         throw "The original package was restored, but Windows prevented removal of retired platform assets: '$retiredInstall', '$retiredBootstrap', '$retiredShortcut'. The profile was retained. $($_.Exception.Message)"
     }
-    Write-Output "Original package bytes restored. Profile retained: $($installed.Locations.ProfileDirectory)"
+    if ($installed.RestorePackage) {
+        Write-Output "Original package bytes restored. Profile retained: $($installed.Locations.ProfileDirectory)"
+    } else {
+        Write-Output "Owned platform files removed. Profile retained: $($installed.Locations.ProfileDirectory)"
+    }
 }
 
 Export-ModuleMember -Function Invoke-PlatformInstall, Invoke-PlatformLaunch, Invoke-PlatformUninstall

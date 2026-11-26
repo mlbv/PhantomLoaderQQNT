@@ -15,7 +15,7 @@ const config = PhantomLoader.api.config.get("PhantomLoader", require("./common/s
 if (config.enable_dlvm_capture !== false) armCapture();
 for (const slug in config.deleting_plugins) store.deletePlugin(slug, [true, true], true);
 for (const slug in config.installing_plugins) store.installPlugin(slug);
-loadAllPlugins();
+loadAllPlugins(store.applyPendingPlugins());
 for (const plugin of Object.values(PhantomLoader.plugins)) {
     if (plugin.disabled || plugin.incompatible || !plugin.path.injects.main) continue;
     try {

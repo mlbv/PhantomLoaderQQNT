@@ -7,9 +7,9 @@ The offline bundle targets Windows 11 x64 and supports Windows PowerShell 5.1 an
 
 ## QQNT compatibility
 
-The `profile.json` in each bundle specifies the supported `curVersion`, accepted `baseVersion` and `buildId` pairs, and the size and SHA-256 of each pinned file. The installer and launcher compare those values with the local installation and reject a pending update to another version.
+The `profile.json` in each bundle specifies the supported `curVersion`, accepted `baseVersion` and `buildId` pairs, and the size and SHA-256 of each pinned file. The installer and launcher compare those values with the local installation. A staged update to a version the bundle does not support is skipped by clearing `readyVersion` before launch or install; a pending update installer is still refused.
 
-A hot update can advance `curVersion` while retaining the original base selector and root `QQ.exe`, so two installations displaying the same QQNT version can yield different validation results. The [profile in this source tree](../distribution/profile.json) requires the selector and root executable from the full Tencent QQNT 9.9.37-54395 installer. For a downloaded release, run `Install.ps1 -CheckOnly` to check the local installation against that release's bundled profile.
+A hot update can advance `curVersion` while retaining the original base selector and root `QQ.exe`, so two installations displaying the same QQNT version can yield different validation results. The [profile in this source tree](../distribution/profile.json) targets `9.9.38-54985`, accepts either the hot-update base `9.9.37-54395` or the full-install base `9.9.38-54985`, and pins the root `QQ.exe` from the full Tencent QQNT 9.9.37-54395 installer; a full installer that ships a different root executable is refused until the profile is re-pinned. For a downloaded release, run `Install.ps1 -CheckOnly` to check the local installation against that release's bundled profile.
 
 ## Installing a release
 
@@ -20,7 +20,7 @@ A hot update can advance `curVersion` while retaining the original base selector
 .\Install.ps1
 ~~~
 
-The installer uses the original `package.json` together with an unused bootstrap path, backs up the original package bytes and changes its entry point; signed QQ binaries remain unchanged. The created **QQNT (PhantomLoader)** shortcut starts the payload, which applies the in-memory verifier patch, supplies the native binding and installs the profiled wrapper inspection patches before normal wrapper initialization. The wrapper patches remain active independently of the DLVM capture setting.
+The installer uses the original `package.json` together with an unused bootstrap path, backs up the original package bytes and changes its entry point; signed QQ binaries remain unchanged. The created **QQNT (PhantomLoader)** shortcut starts the payload, which applies the in-memory verifier patch, supplies the native binding and installs the profiled wrapper inspection patches before normal wrapper initialization. The shortcut is derived from the installation rather than integrity-checked: install replaces a stale one, and launch repairs or recreates it. The wrapper patches remain active independently of the DLVM capture setting.
 
 The default runtime directory is `PhantomLoaderQQNT` beneath the QQ root, and the default profile is `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`. Use the same path overrides for preflight and installation, including `-ProfileDirectory` to reuse an existing compatible profile. The full parameter example and directory requirements appear in the [installer reference](../distribution/README.md#install-and-launch).
 
@@ -36,7 +36,7 @@ The capture directory accepts at most 160 UTF-16 code units, while the complete 
 
 ## Removal
 
-Run `Uninstall.cmd` or `Uninstall.ps1` from the original bundle or installed runtime. Removal verifies ownership, restores the exact backed-up package bytes and removes the bootstrap, shortcut and owned runtime files, while profile data and plugins remain available.
+Run `Uninstall.cmd` or `Uninstall.ps1` from the original bundle, or invoke the installed script by absolute path from outside the runtime directory. Removal verifies ownership independently of the QQNT version selector and restores the backed-up package only if the current bytes match the installed modification. It removes the owned bootstrap, shortcut and runtime files while retaining the profile and plugins.
 
 ## Building the bundle
 

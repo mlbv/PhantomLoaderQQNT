@@ -21,7 +21,7 @@ Use Git, GnuPG and the GitHub CLI from a fresh clone. Before running any reposit
 gpg --show-keys --with-fingerprint .github/keys/release.asc
 # Check the full primary fingerprint before importing.
 gpg --import .github/keys/release.asc
-$tag = 'v1.0.0' # Replace with the release being verified.
+$tag = 'v1.2.0' # Replace with the release being verified.
 git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
 if ($LASTEXITCODE) { throw 'Tag fetch failed.' }
 git --no-replace-objects -c gpg.format=openpgp verify-tag --raw "refs/tags/$tag"

@@ -1,6 +1,6 @@
 {
     "name": "phantomloader-qqnt",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "PhantomLoaderQQNT — QQNT plugin platform with in-memory native hooks.",
     "main": "./src/main.js",
     "scripts": {

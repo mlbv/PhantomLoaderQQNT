@@ -16,8 +16,15 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 $patchRoot = Join-Path $PSScriptRoot 'patches'
 $buildRoot = Join-Path $PSScriptRoot 'build'
 $dependencyRoot = Join-Path $buildRoot 'dependencies'
-if (-not $ArchiveDirectory) { $ArchiveDirectory = Join-Path $buildRoot 'dependency-cache' }
-$ArchiveDirectory = [IO.Path]::GetFullPath($ArchiveDirectory)
+if ($ArchiveDirectory) {
+    $archiveProvider = $null
+    $archiveDrive = $null
+    $ArchiveDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
+        $ArchiveDirectory, [ref]$archiveProvider, [ref]$archiveDrive)
+    if ($archiveProvider.Name -ne 'FileSystem') { throw 'ArchiveDirectory must be a filesystem path.' }
+} else {
+    $ArchiveDirectory = Join-Path $buildRoot 'dependency-cache'
+}
 $stateName = '.source-state.json'
 $prepareSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
 

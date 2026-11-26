@@ -6,6 +6,8 @@ const PhantomLoader = require("./state.js");
 const path = require("path");
 const fs = require("fs");
 const electron = require("electron");
+const { randomUUID } = require("node:crypto");
+const { isPluginSlug, readPluginManifest } = require("./plugin-manifest.js");
 const default_config = require("../common/static/config.json");
 
 const AdmZip = (() => {
@@ -23,44 +25,115 @@ function showErrorDialog(title, message) {
     electron.app.isReady() ? showDialog() : electron.app.once("ready", showDialog);
 }
 
+const stagingRoot = () => path.join(PhantomLoader.path.plugins, ".pending-installations");
+
+function pendingPaths(slug, record) {
+    if (!isPluginSlug(slug) || !/^[a-zA-Z0-9_-]+$/.test(slug) ||
+        typeof record?.stage !== "string" || !/^install-[a-zA-Z0-9]+$/.test(record.stage) ||
+        typeof record.canonical !== "boolean" ||
+        (record.previous != null && !isPluginSlug(record.previous))) {
+        throw new Error("Invalid pending plugin installation");
+    }
+    const directory = record.canonical ? slug : `${slug}_${record.stage.slice("install-".length)}`;
+    return {
+        staged: path.join(stagingRoot(), record.stage),
+        destination: path.join(PhantomLoader.path.plugins, directory),
+        previous: record.previous == null ? undefined : path.join(PhantomLoader.path.plugins, record.previous)
+    };
+}
+
+function removeStaging(directory) {
+    try { fs.rmSync(directory, { recursive: true, force: true }); }
+    catch (error) { console.warn(`[Plugins] Could not remove staging directory ${directory}`, error); }
+}
+
 exports.installPlugin = (plugin_path) => {
-    let staged_path;
-    let installed_path;
+    let staged;
     try {
-        let manifest_text;
         let copy;
-        if (path.extname(plugin_path).toLowerCase() == ".zip") {
-            const plugin_zip = new AdmZip(plugin_path);
-            manifest_text = plugin_zip.readAsText(plugin_zip.getEntry("manifest.json"));
-            copy = destination => plugin_zip.extractAllTo(destination);
-        } else if (path.basename(plugin_path).toLowerCase() == "manifest.json") {
-            manifest_text = fs.readFileSync(plugin_path, "utf-8");
+        if (path.extname(plugin_path).toLowerCase() === ".zip") {
+            const zip = new AdmZip(plugin_path);
+            copy = destination => zip.extractAllTo(destination);
+        } else if (path.basename(plugin_path).toLowerCase() === "manifest.json") {
             copy = destination => fs.cpSync(path.dirname(plugin_path), destination, { recursive: true });
         } else {
             return false;
         }
-        const { slug } = JSON.parse(manifest_text);
-        if (typeof slug !== "string" || !/^[a-zA-Z0-9_-]+$/.test(slug)) {
-            throw new Error("插件 slug 必须是目录名称，只能包含字母、数字、下划线或连字符");
+        fs.mkdirSync(stagingRoot(), { recursive: true });
+        staged = fs.mkdtempSync(path.join(stagingRoot(), "install-"));
+        copy(staged);
+        const { slug } = readPluginManifest(staged, { staged: true });
+        const config = PhantomLoader.api.config.get("PhantomLoader", default_config);
+        const pending = Object.assign(Object.create(null), config.pending_plugins);
+        const superseded = pending[slug];
+        const current = PhantomLoader.plugins[slug]?.path?.plugin ??
+            exports.scanPluginDirectory().findLast(plugin => plugin.manifest.slug === slug)?.path;
+        const destination = path.join(PhantomLoader.path.plugins, slug);
+        const canonical = !fs.existsSync(destination);
+        if (!current && !superseded && canonical) {
+            fs.renameSync(staged, destination);
+            return true;
         }
-        fs.mkdirSync(PhantomLoader.path.plugins, { recursive: true });
-        staged_path = fs.mkdtempSync(path.join(PhantomLoader.path.plugins, ".install-"));
-        copy(staged_path);
-        let destination = path.join(PhantomLoader.path.plugins, slug);
-        if (fs.existsSync(destination)) destination += "_" + path.basename(staged_path).slice(".install-".length);
-        fs.renameSync(staged_path, destination);
-        installed_path = destination;
-        staged_path = undefined;
-        if (slug in PhantomLoader.plugins) exports.deletePlugin(slug, [true, false], false);
+        pending[slug] = {
+            stage: path.basename(staged),
+            canonical,
+            previous: current == null ? undefined : path.basename(current)
+        };
+        const deleting = { ...config.deleting_plugins };
+        delete deleting[slug];
+        if (!PhantomLoader.api.config.set("PhantomLoader", { ...config, pending_plugins: pending, deleting_plugins: deleting })) {
+            throw new Error("无法保存插件变更，请检查配置目录的写入权限");
+        }
+        staged = undefined;
+        if (superseded) {
+            try { removeStaging(pendingPaths(slug, superseded).staged); }
+            catch (error) { console.warn(`[Plugins] Invalid superseded installation for ${slug}`, error); }
+        }
         return true;
     }
-    catch (err) {
-        if (staged_path) fs.rmSync(staged_path, { recursive: true, force: true });
-        if (installed_path) fs.rmSync(installed_path, { recursive: true, force: true });
-        showErrorDialog("安装插件时报错，请检查并手动安装", err.message);
+    catch (error) {
+        if (staged) removeStaging(staged);
+        showErrorDialog("安装插件时报错，请检查并手动安装", error.message);
         return false;
     }
-}
+};
+
+exports.applyPendingPlugins = () => {
+    const config = PhantomLoader.api.config.get("PhantomLoader", default_config);
+    const pending = { ...config.pending_plugins };
+    const activated = new Map();
+    let changed = false;
+
+    for (const [slug, record] of Object.entries(pending)) {
+        try {
+            const { staged, destination, previous } = pendingPaths(slug, record);
+            const needsMove = fs.existsSync(staged);
+            const manifest = readPluginManifest(needsMove ? staged : destination, { staged: true });
+            if (manifest.slug !== slug) throw new Error("Pending plugin slug does not match its manifest");
+            if (needsMove) {
+                if (fs.existsSync(destination)) throw new Error(`Plugin destination already exists: ${destination}`);
+                fs.renameSync(staged, destination);
+            }
+            activated.set(slug, destination);
+            const retired = path.join(stagingRoot(), `retired-${record.stage}`);
+            if (previous && path.relative(destination, previous) && fs.existsSync(previous)) {
+                if (readPluginManifest(previous).slug !== slug) {
+                    throw new Error(`Previous plugin directory changed: ${previous}`);
+                }
+                fs.renameSync(previous, retired);
+            }
+            removeStaging(retired);
+            delete pending[slug];
+            changed = true;
+        } catch (error) {
+            console.warn(`[Plugins] Could not apply pending installation for ${slug}`, error);
+        }
+    }
+    if (changed && !PhantomLoader.api.config.set("PhantomLoader", { ...config, pending_plugins: pending })) {
+        console.warn("[Plugins] Could not save pending installations");
+    }
+    return activated;
+};
 
 exports.deletePlugin = (slug, [self, data], now) => {
     const config = PhantomLoader.api.config.get("PhantomLoader", default_config);
@@ -90,13 +163,23 @@ exports.disablePlugin = (slug, disabled) => {
 }
 
 exports.setPluginConfig = (slug, config) => {
+    let temporary;
     try {
-        const config_path = path.join(PhantomLoader.path.data, slug === "PhantomLoader" ? "LiteLoader" : slug, "config.json");
-        fs.mkdirSync(path.dirname(config_path), { recursive: true });
-        fs.writeFileSync(config_path, JSON.stringify(config, null, 4), "utf-8");
+        const configPath = path.join(PhantomLoader.path.data, slug === "PhantomLoader" ? "LiteLoader" : slug, "config.json");
+        const directory = path.dirname(configPath);
+        const serialized = JSON.stringify(config, null, 4);
+        fs.mkdirSync(directory, { recursive: true });
+        temporary = path.join(directory, `.config-${randomUUID()}.tmp`);
+        fs.writeFileSync(temporary, serialized, { encoding: "utf-8", flag: "wx" });
+        fs.renameSync(temporary, configPath);
         return true;
+    } catch {
+        if (temporary) {
+            try { fs.rmSync(temporary, { force: true }); }
+            catch (error) { console.warn(`[Plugins] Could not remove temporary configuration ${temporary}`, error); }
+        }
+        return false;
     }
-    catch { return false; }
 }
 
 exports.getPluginConfig = (slug, config) => {
@@ -116,11 +199,14 @@ exports.getPluginConfig = (slug, config) => {
 
 exports.scanPluginDirectory = () => {
     fs.mkdirSync(PhantomLoader.path.plugins, { recursive: true });
-    return fs.readdirSync(PhantomLoader.path.plugins, { withFileTypes: true })
-        .map(dirent => path.join(PhantomLoader.path.plugins, dirent.name, "manifest.json"))
-        .filter(manifest => fs.existsSync(manifest))
-        .map(manifest => ({
-            path: path.dirname(manifest),
-            manifest: JSON.parse(fs.readFileSync(manifest, "utf-8"))
-        }));
+    const plugins = [];
+    for (const directory of fs.readdirSync(PhantomLoader.path.plugins, { withFileTypes: true })) {
+        if ((!directory.isDirectory() && !directory.isSymbolicLink()) ||
+            directory.name === ".pending-installations" || directory.name.startsWith(".install-")) continue;
+        const pluginPath = path.join(PhantomLoader.path.plugins, directory.name);
+        if (!fs.existsSync(path.join(pluginPath, "manifest.json"))) continue;
+        try { plugins.push({ path: pluginPath, manifest: readPluginManifest(pluginPath) }); }
+        catch (error) { console.warn(`[Plugins] Could not read manifest in ${pluginPath}`, error); }
+    }
+    return plugins;
 }

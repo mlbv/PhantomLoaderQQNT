@@ -3,7 +3,7 @@
 
 # PhantomLoaderQQNT offline installer
 
-This bundle installs PhantomLoaderQQNT 1.1.0 with LiteLoader API compatibility 5.2.1 and native API version 1 for QQNT 9.9.37-54395 on Windows x64. It includes the loader, injector, payload, default DLVM capture and local capture reporter, and supports Windows PowerShell 5.1 and later.
+This bundle installs PhantomLoaderQQNT 1.2.0 with LiteLoader API compatibility 5.2.1 and native API version 1 for QQNT 9.9.38-54985 on Windows x64. It includes the loader, injector, payload, default DLVM capture and local capture reporter, and supports Windows PowerShell 5.1 and later.
 
 Before installation, follow the [release verification guide](https://github.com/mlbv/PhantomLoaderQQNT/blob/main/docs/releases.md) to verify the signed source tag, archive hash and GitHub build attestation.
 
@@ -33,11 +33,11 @@ The installer resolves QQ through the Tencent QQNT registry entries and `%Progra
 
 The default runtime directory is `PhantomLoaderQQNT` beneath the QQ root, and the default profile is `%LOCALAPPDATA%\PhantomLoaderQQNT\profile`. Let the installer create a new runtime directory; an existing runtime directory must contain a matching installed bundle and its ownership receipt. The desktop and install-parent directories must already exist when installation starts, while an elevated PowerShell session supplies write access for QQ installations under Program Files.
 
-Installation verifies the version selector and exact file fingerprints in `profile.json`, saves the original package bytes as `original-package.bin`, creates the bootstrap and updates `package.json`. It also creates the **QQNT (PhantomLoader)** desktop shortcut, which starts QQ through the bundled injector; launch then validates the installation and starts the supported executable with its native payload.
+Installation verifies the version selector and exact file fingerprints in `profile.json`, saves the original package bytes as `original-package.bin`, creates the bootstrap and updates `package.json`. It also creates the **QQNT (PhantomLoader)** desktop shortcut, which starts QQ through the bundled injector; launch then validates the installation and starts the supported executable with its native payload. The shortcut is derived from the installation: install replaces a stale shortcut, and launch repairs or recreates it, so it is not an integrity-checked file.
 
 The payload also applies the exact-build wrapper inspection patches before normal wrapper initialization. These patches are mandatory and independent of the DLVM capture setting; they cover the selected signing-stack, code-integrity, handle-inspection and environment-collection routes, without establishing general undetectability.
 
-This bundle requires the selector and root `QQ.exe` from the full Tencent QQNT 9.9.37-54395 installer. A hot update can advance `curVersion` while retaining the earlier `baseVersion`, `buildId` and root executable, so use `Install.ps1 -CheckOnly` to validate the installation against the bundled profile.
+This bundle targets `9.9.38-54985` and accepts either the hot-update base `9.9.37-54395` or the full-install base `9.9.38-54985`; the pinned root `QQ.exe` is the one from the full Tencent QQNT 9.9.37-54395 installer. A hot update can advance `curVersion` while retaining the earlier `baseVersion`, `buildId` and root executable, so use `Install.ps1 -CheckOnly` to validate the installation against the bundled profile. A staged update to an unsupported version is skipped by clearing `readyVersion`; a pending update installer is refused.
 
 ~~~powershell
 # From the installed runtime directory
@@ -72,7 +72,7 @@ Close QQ, then run `Uninstall.cmd` or the PowerShell entry point:
 .\Uninstall.ps1
 ~~~
 
-Use `QQRoot` and `InstallDirectory` for custom installation locations. Removal verifies ownership and the installed inventory, restores the original package bytes and removes the owned bootstrap, shortcut and runtime, while the profile retains plugins, configuration, captures and report ZIPs.
+Use `QQRoot` and `InstallDirectory` for custom installation locations. Start outside the installed runtime directory so Windows can remove it. Removal verifies the installed inventory independently of the QQNT version selector and restores the original package only when its current bytes match the installed modification. The profile retains plugins, configuration, captures and report ZIPs.
 
 ## Bundle and build
 

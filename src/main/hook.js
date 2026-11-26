@@ -18,7 +18,6 @@ function proxyPreload(func) {
         apply(target, thisArg, argArray) {
             return [
                 path.join(PhantomLoader.path.root, "./src/preload/api.js"),
-                path.join(PhantomLoader.path.root, "./src/preload/module.js"),
                 ...Reflect.apply(target, thisArg, argArray)
             ];
         }
@@ -27,7 +26,6 @@ function proxyPreload(func) {
         apply(target, thisArg, argArray) {
             return [
                 { filePath: path.join(PhantomLoader.path.root, "./src/preload/api.js"), type: "frame" },
-                { filePath: path.join(PhantomLoader.path.root, "./src/preload/module.js"), type: "frame" },
                 ...Reflect.apply(target, thisArg, argArray)
             ];
         }

@@ -67,7 +67,7 @@ Handlers run in priority order, and the transport reconstructs command views aft
 
 Synchronous transformations complete synchronously. Promise-returning handlers queue later matched work for the same direction and web-contents stream, allowing unrelated traffic to continue through its own stream; synchronous IPC remains on the synchronous transport path.
 
-Nested matched dispatches wait behind the current handler in the same direction and web-contents stream, while plugin UI notifications use separate channels and therefore do not join that queue.
+A handler cannot dispatch another matched operation into its own active direction and web-contents stream. Such a dispatch throws because awaiting its completion would prevent the current handler from releasing the stream. Unmatched operations can still forward immediately.
 
 ## Lifetime
 

@@ -36,10 +36,12 @@ pub fn parse_fixture(arguments: impl IntoIterator<Item = OsString>) -> Result<Co
 }
 
 fn parse_mode(arguments: impl IntoIterator<Item = OsString>, fixture: bool) -> Result<Command> {
-    let arguments: Vec<_> = arguments.into_iter().collect();
-    if !fixture && arguments.len() == 1 && arguments[0] == "-profile-hash" {
+    let mut args = arguments.into_iter().fuse().peekable();
+    let first = args.next();
+    if !fixture && first.as_deref() == Some(OsStr::new("-profile-hash")) && args.peek().is_none() {
         return Ok(Command::ProfileHash);
     }
+    let mut args = first.into_iter().chain(args);
     let mut options = Options {
         executable: None,
         payload: None,
@@ -52,7 +54,6 @@ fn parse_mode(arguments: impl IntoIterator<Item = OsString>, fixture: bool) -> R
     };
     let mut reporter = None;
     let mut capture_directory = None;
-    let mut args = arguments.into_iter();
     while let Some(arg) = args.next() {
         if arg == "--" {
             options.arguments.extend(args);

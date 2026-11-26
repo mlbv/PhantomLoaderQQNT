@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 movblock
 // SPDX-License-Identifier: LGPL-3.0-or-later
 
+const { AsyncLocalStorage } = require("node:async_hooks");
+
 const directions = ["incoming", "outgoing", "external"];
 
 function isThenable(value) {
@@ -10,6 +12,7 @@ function isThenable(value) {
 class Interception {
     #handlers = new Map(directions.map(direction => [direction, []]));
     #streams = new Map(directions.map(direction => [direction, new Map()]));
+    #activeHandler = new AsyncLocalStorage();
 
     /**
      * Higher priorities run first; equal priorities retain registration order.
@@ -73,12 +76,18 @@ class Interception {
         });
         if (!registrations.length) return forward(context.args);
 
-        const streams = this.#streams.get(direction);
         const id = context.webContents?.id;
+        for (let handler = this.#activeHandler.getStore(); handler; handler = handler.parent) {
+            if (handler.active && handler.direction === direction && handler.id === id) {
+                throw new Error(`Cannot dispatch matched ${direction} interception from a handler in the same stream`);
+            }
+        }
+
+        const streams = this.#streams.get(direction);
         const previous = streams.get(id);
         const lifetime = previous?.lifetime ?? { active: true };
         let release;
-        const stream = { done: new Promise(resolve => release = resolve), lifetime };
+        const stream = { done: new Promise(resolve => release = resolve), lifetime, direction, id };
         streams.set(id, stream);
         const complete = () => {
             if (streams.get(id) === stream) streams.delete(id);
@@ -88,8 +97,8 @@ class Interception {
         let result;
         try {
             result = previous ?
-                previous.done.then(() => this.#run(registrations, context, forward, lifetime)) :
-                this.#run(registrations, context, forward, lifetime);
+                previous.done.then(() => this.#run(registrations, context, forward, stream)) :
+                this.#run(registrations, context, forward, stream);
             if (!isThenable(result)) {
                 complete();
                 return result;
@@ -121,16 +130,31 @@ class Interception {
         handlers.splice(handlers.indexOf(registration), 1);
     }
 
-    #run(registrations, context, forward, lifetime, index = 0) {
+    #run(registrations, context, forward, stream, index = 0) {
+        const { lifetime, direction, id } = stream;
         for (; index < registrations.length; index++) {
             if (!lifetime.active) return;
             const registration = registrations[index];
             if (!registration.active) continue;
-            const result = registration.handler(context);
-            if (isThenable(result)) {
-                return Promise.resolve(result).then(result => {
-                    if (!lifetime.active || this.#apply(result, context)) return;
-                    return this.#run(registrations, context, forward, lifetime, index + 1);
+
+            const handler = { direction, id, parent: this.#activeHandler.getStore(), active: true };
+            let result;
+            try {
+                result = this.#activeHandler.run(handler, () => {
+                    const value = registration.handler(context);
+                    return isThenable(value) ? Promise.resolve(value) : value;
+                });
+            } finally {
+                if (!(result instanceof Promise)) handler.active = false;
+            }
+            if (result instanceof Promise) {
+                return result.then(value => {
+                    handler.active = false;
+                    if (!lifetime.active || this.#apply(value, context)) return;
+                    return this.#run(registrations, context, forward, stream, index + 1);
+                }, error => {
+                    handler.active = false;
+                    throw error;
                 });
             }
             if (!lifetime.active || this.#apply(result, context)) return;

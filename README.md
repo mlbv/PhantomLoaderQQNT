@@ -10,7 +10,7 @@
 
 一个基于 LiteLoaderQQNT 的 QQNT 插件平台。
 
-**版本 1.1.0 · LiteLoader API 兼容版本 5.2.1 · Windows 11 x64 · QQNT 9.9.37-54395**
+**版本 1.2.0 · LiteLoader API 兼容版本 5.2.1 · Windows 11 x64 · QQNT 9.9.38-54985**
 
 ## 安装与启动
 
@@ -21,7 +21,7 @@
 3. 运行 `Install.cmd`，或在 PowerShell 中执行 `.\Install.ps1`。写入 Program Files 下的 QQ 安装通常需要管理员权限。
 4. 使用桌面上的 **QQNT (PhantomLoader)** 快捷方式启动。
 
-当前源码中的兼容性配置以腾讯 QQNT 9.9.37-54395 完整安装版为准。QQ 热更新可能保留旧版启动程序和基础版本，因此即使显示相同的 QQ 版本，不同安装也可能得到不同的校验结果。自定义路径、兼容性要求和卸载步骤见 [Windows distribution](docs/distribution.md)。
+当前源码中的兼容性配置面向 QQNT 9.9.38-54985，并使用腾讯 QQNT 9.9.37-54395 完整安装版的根启动程序。QQ 热更新可能保留旧版启动程序和基础版本，因此即使显示相同的 QQ 版本，不同安装也可能得到不同的校验结果。自定义路径、兼容性要求和卸载步骤见 [Windows distribution](docs/distribution.md)。
 
 ## 插件与兼容性
 
@@ -31,7 +31,7 @@
 
 ~~~js
 exports.onLoad = (PhantomLoader) => {
-    PhantomLoader.versions.phantomloader; // "1.1.0"
+    PhantomLoader.versions.phantomloader; // "1.2.0"
     PhantomLoader.api.intercept.register("my-plugin", "external", handler);
 };
 ~~~

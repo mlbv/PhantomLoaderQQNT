@@ -48,8 +48,8 @@ impl Reporter {
 
     pub fn monitor(&self, process: &SuspendedProcess) -> Result<u32> {
         let code = process.wait_for_exit()?;
-        let (created, exited) = process.times()?;
         if should_report(code) {
+            let (created, exited) = process.times()?;
             start_detached(
                 &self.powershell,
                 &self.arguments(process.id, code, created, exited),

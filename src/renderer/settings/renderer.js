@@ -46,7 +46,7 @@ async function initVersions(view) {
         fetch(release_latest_url).then((res) => {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const new_version = res.url.slice(res.url.lastIndexOf("/") + 1).replace(/^v/, "");
-            if (PhantomLoader.versions.phantomloader != new_version) {
+            if (new_version.localeCompare(PhantomLoader.versions.phantomloader, undefined, { numeric: true }) > 0) {
                 title.textContent = `发现 PhantomLoaderQQNT 新版本 ${new_version}`;
                 update_btn.textContent = "去瞅一眼";
                 update_btn.value = res.url;
